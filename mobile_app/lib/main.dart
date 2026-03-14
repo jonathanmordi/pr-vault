@@ -25,9 +25,95 @@ class PRVaultApp extends StatelessWidget {
       title: 'PR Vault',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1DB954)),
         useMaterial3: true,
+        brightness: Brightness.light,
+        scaffoldBackgroundColor: const Color(0xFFF8F7F4),
+        colorScheme: ColorScheme.light(
+          primary: const Color(0xFFB80C09),
+          secondary: const Color(0xFFB80C09),
+          surface: const Color(0xFFFFFFFF),
+          onPrimary: Colors.white,
+          onSurface: const Color(0xFF141301),
+        ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFFFFFFFF),
+          foregroundColor: Color(0xFF141301),
+          elevation: 0,
+          surfaceTintColor: Colors.transparent,
+          titleTextStyle: TextStyle(
+            color: Color(0xFF141301),
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        tabBarTheme: const TabBarThemeData(
+          labelColor: Color(0xFFB80C09),
+          unselectedLabelColor: Color(0xFF888888),
+          indicatorColor: Color(0xFFB80C09),
+          indicatorSize: TabBarIndicatorSize.label,
+        ),
+        chipTheme: ChipThemeData(
+          backgroundColor: const Color(0xFFF0EDEA),
+          selectedColor: const Color(0xFFB80C09),
+          labelStyle: const TextStyle(fontSize: 12),
+          secondaryLabelStyle: const TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+          ),
+          side: BorderSide.none,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+        ),
+        dividerColor: const Color(0xFFEEECEA),
       ),
+      darkTheme: ThemeData(
+        useMaterial3: true,
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: const Color(0xFF1C1B08),
+        colorScheme: ColorScheme.dark(
+          primary: const Color(0xFFB80C09),
+          secondary: const Color(0xFFB80C09),
+          surface: const Color(0xFF141301),
+          onPrimary: Colors.white,
+          onSurface: const Color(0xFFE5E7E6),
+        ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF141301),
+          foregroundColor: Color(0xFFE5E7E6),
+          elevation: 0,
+          surfaceTintColor: Colors.transparent,
+          titleTextStyle: TextStyle(
+            color: Color(0xFFE5E7E6),
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        tabBarTheme: const TabBarThemeData(
+          labelColor: Color(0xFFB80C09),
+          unselectedLabelColor: Color(0xFF555555),
+          indicatorColor: Color(0xFFB80C09),
+          indicatorSize: TabBarIndicatorSize.label,
+        ),
+        chipTheme: ChipThemeData(
+          backgroundColor: const Color(0x14FFFFFF),
+          selectedColor: const Color(0xFFB80C09),
+          labelStyle: const TextStyle(
+            color: Color(0xFF888888),
+            fontSize: 12,
+          ),
+          secondaryLabelStyle: const TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+          ),
+          side: BorderSide.none,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+        ),
+        dividerColor: const Color(0x0FFFFFFF),
+      ),
+      themeMode: ThemeMode.system,
       home: const AuthGate(),
     );
   }
