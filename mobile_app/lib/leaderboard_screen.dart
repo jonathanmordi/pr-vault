@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'app_config.dart';
 
 final supabase = Supabase.instance.client;
 
@@ -11,16 +10,27 @@ class LeaderboardScreen extends StatefulWidget {
   State<LeaderboardScreen> createState() => _LeaderboardScreenState();
 }
 
-class _LeaderboardScreenState extends State<LeaderboardScreen> {
+class _LeaderboardScreenState extends State<LeaderboardScreen>
+    with TickerProviderStateMixin {
   List<Map<String, dynamic>> _entries = [];
+  List<Map<String, dynamic>> _grouped = [];
   bool _loading = true;
   String _selectedEvent = 'All';
   List<String> _events = ['All'];
+  late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(() => setState(() {}));
     _loadLeaderboard();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadLeaderboard() async {
@@ -28,24 +38,62 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
 
     final response = await supabase
         .from('track_prs')
-        .select('event, best_display, improvement_delta_pct, profiles(full_name)')
+        .select(
+            'event, best_display, best_mark_meters, best_time_seconds, improvement_delta_pct, athlete_id, profiles(full_name)')
         .order('improvement_delta_pct', ascending: false);
 
     final data = List<Map<String, dynamic>>.from(response);
 
-    // build event filter list
     final events = ['All', ...{...data.map((e) => e['event'] as String)}];
+
+    final Map<String, Map<String, dynamic>> best = {};
+    for (final entry in data) {
+      final athleteId = entry['athlete_id'] as String;
+      final delta = (entry['improvement_delta_pct'] ?? 0.0) as num;
+      if (!best.containsKey(athleteId) ||
+          delta > (best[athleteId]!['improvement_delta_pct'] as num)) {
+        best[athleteId] = entry;
+      }
+    }
+
+    final grouped = best.values.toList()
+      ..sort((a, b) => (b['improvement_delta_pct'] as num)
+          .compareTo(a['improvement_delta_pct'] as num));
 
     setState(() {
       _entries = data;
       _events = events;
       _loading = false;
+      _grouped = grouped;
     });
   }
 
+  bool get _isField => ['HJ', 'LJ', 'TJ', 'PV', 'SP', 'DT', 'HT', 'JT']
+      .contains(_selectedEvent.toUpperCase());
+
+  bool get _isHeatMap => _tabController.index == 0;
+
   List<Map<String, dynamic>> get _filtered {
-    if (_selectedEvent == 'All') return _entries;
-    return _entries.where((e) => e['event'] == _selectedEvent).toList();
+    if (_selectedEvent == 'All') return _grouped;
+
+    final filtered = _entries
+        .where((e) => e['event'] == _selectedEvent)
+        .toList();
+
+    if (_isHeatMap) {
+      filtered.sort((a, b) => (b['improvement_delta_pct'] as num? ?? 0)
+          .compareTo(a['improvement_delta_pct'] as num? ?? 0));
+    } else {
+      if (_isField) {
+        filtered.sort((a, b) => (b['best_mark_meters'] as num? ?? 0)
+            .compareTo(a['best_mark_meters'] as num? ?? 0));
+      } else {
+        filtered.sort((a, b) =>
+            (a['best_time_seconds'] as num? ?? 9999)
+                .compareTo(b['best_time_seconds'] as num? ?? 9999));
+      }
+    }
+    return filtered;
   }
 
   Color _heatColor(double delta) {
@@ -60,7 +108,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Heat Map'),
+        title: const Text('PR Vault'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -71,12 +119,18 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             onPressed: () => supabase.auth.signOut(),
           ),
         ],
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: 'Heat Map'),
+            Tab(text: 'PR Rankings'),
+          ],
+        ),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                // Event filter chips
                 SizedBox(
                   height: 50,
                   child: ListView.builder(
@@ -98,16 +152,15 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                     },
                   ),
                 ),
-                // Leaderboard list
                 Expanded(
                   child: ListView.builder(
                     itemCount: _filtered.length,
                     itemBuilder: (context, index) {
                       final entry = _filtered[index];
-                      final name = entry['profiles']?['full_name'] ?? 'Unknown';
-                      final event = entry['event'] ?? '';
-                      final display = entry['best_display'] ?? '';
-                      final delta = (entry['improvement_delta_pct'] ?? 0.0) as num;
+                      final name =
+                          entry['profiles']?['full_name'] ?? 'Unknown';
+                      final delta =
+                          (entry['improvement_delta_pct'] ?? 0.0) as num;
                       final color = _heatColor(delta.toDouble());
 
                       return ListTile(
@@ -122,16 +175,26 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                           ),
                         ),
                         title: Text(name),
-                        subtitle: Text('$event — $display'),
-                        trailing: delta > 0
-                            ? Text(
-                                '+${delta.toStringAsFixed(2)}%',
-                                style: TextStyle(
-                                  color: color,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              )
-                            : const Text('—'),
+                        subtitle: Text(
+                          _selectedEvent == 'All'
+                              ? 'Best: ${entry['event']} — ${entry['best_display']}'
+                              : '${entry['event']} — ${entry['best_display']}',
+                        ),
+                        trailing: _isHeatMap
+                            ? (delta > 0
+                                ? Text(
+                                    '+${delta.toStringAsFixed(2)}%',
+                                    style: TextStyle(
+                                      color: color,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  )
+                                : const Text('—'))
+                            : Text(
+                                entry['best_display'] ?? '—',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold),
+                              ),
                       );
                     },
                   ),
