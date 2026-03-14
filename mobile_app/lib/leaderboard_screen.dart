@@ -135,9 +135,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final dividerColor = isDark
-        ? const Color(0x0FFFFFFF)
-        : const Color(0xFFEEECEA);
+    final dividerColor =
+        isDark ? const Color(0x0FFFFFFF) : const Color(0xFFEEECEA);
 
     return Scaffold(
       appBar: AppBar(
@@ -186,9 +185,11 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                         child: FilterChip(
                           label: Text(event),
                           selected: selected,
+                          showCheckmark: false,
                           onSelected: (_) =>
                               setState(() => _selectedEvent = event),
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 4),
                           materialTapTargetSize:
                               MaterialTapTargetSize.shrinkWrap,
                         ),
@@ -218,7 +219,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                             final name =
                                 entry['profiles']?['full_name'] ?? 'Unknown';
                             final delta =
-                                (entry['improvement_delta_pct'] ?? 0.0) as num;
+                                (entry['improvement_delta_pct'] ?? 0.0)
+                                    as num;
 
                             return Padding(
                               padding: const EdgeInsets.symmetric(
@@ -274,13 +276,21 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                                                   : const Color(0xFFBBBBBB),
                                             ),
                                           )
-                                  else
+                                  else if (_selectedEvent != 'All')
                                     Text(
                                       entry['best_display'] ?? '—',
                                       style: const TextStyle(
                                         fontSize: 13,
                                         fontWeight: FontWeight.w600,
                                         color: Color(0xFFB80C09),
+                                      ),
+                                    )
+                                  else
+                                    Text(
+                                      entry['event'] ?? '—',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Color(0xFF888888),
                                       ),
                                     ),
                                 ],
