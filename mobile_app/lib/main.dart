@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'app_config.dart';
+import 'leaderboard_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -141,19 +142,6 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('PR Vault'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () => supabase.auth.signOut(),
-          ),
-        ],
-      ),
-      body: const Center(
-        child: Text('Leaderboard coming soon'),
-      ),
-    );
+    return const LeaderboardScreen();
   }
 }
