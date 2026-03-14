@@ -203,8 +203,12 @@ def run_scraper():
     team_url = "https://www.tfrrs.org/teams/tf/NJ_college_m_Stevens.html"
 
     # get team_id from Supabase
-    team_result = supabase.table("teams").select("id").single().execute()
-    team_id = team_result.data["id"]
+    team_result = supabase.table("teams").select("id").execute()
+    teams = team_result.data
+    if not teams:
+        print("No teams found in database")
+        return
+    team_id = teams[0]["id"]
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
