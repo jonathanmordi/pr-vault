@@ -172,15 +172,32 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
+  final _nameCtrl = TextEditingController();
   bool _loading = false;
+  bool _isSignUp = false;
 
-  Future<void> _signIn() async {
+  Future<void> _submit() async {
     setState(() => _loading = true);
     try {
-      await supabase.auth.signInWithPassword(
-        email: _emailCtrl.text.trim(),
-        password: _passCtrl.text.trim(),
-      );
+      if (_isSignUp) {
+        final res = await supabase.auth.signUp(
+          email: _emailCtrl.text.trim(),
+          password: _passCtrl.text.trim(),
+          data: {'full_name': _nameCtrl.text.trim(), 'role': 'athlete'},
+        );
+        if (res.user != null && mounted) {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => InviteCodeScreen(userId: res.user!.id),
+            ),
+          );
+        }
+      } else {
+        await supabase.auth.signInWithPassword(
+          email: _emailCtrl.text.trim(),
+          password: _passCtrl.text.trim(),
+        );
+      }
     } on AuthException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -195,6 +212,7 @@ class _LoginScreenState extends State<LoginScreen> {
   void dispose() {
     _emailCtrl.dispose();
     _passCtrl.dispose();
+    _nameCtrl.dispose();
     super.dispose();
   }
 
@@ -256,11 +274,20 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 6),
               Text(
-                'Track. Lift. Compete.',
+                _isSignUp ? 'Create your account' : 'Track. Lift. Compete.',
                 style: TextStyle(fontSize: 15, color: C.text3(dark)),
                 textAlign: TextAlign.center,
               ),
               const Spacer(),
+              if (_isSignUp) ...[
+                _InputField(
+                  controller: _nameCtrl,
+                  hint: 'Full name',
+                  icon: Icons.person_outline,
+                  dark: dark,
+                ),
+                const SizedBox(height: 12),
+              ],
               _InputField(
                 controller: _emailCtrl,
                 hint: 'Email',
@@ -278,7 +305,170 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 20),
               PressScale(
-                onTap: _loading ? () {} : _signIn,
+                onTap: _loading ? () {} : _submit,
+                child: Container(
+                  height: 52,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [C.accent, C.accentAlt],
+                    ),
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x4DB80C09),
+                        blurRadius: 20,
+                        offset: Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: _loading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : Text(
+                            _isSignUp ? 'Create Account' : 'Sign In',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              GestureDetector(
+                onTap: () => setState(() => _isSignUp = !_isSignUp),
+                child: Text(
+                  _isSignUp
+                      ? 'Already have an account? Sign in'
+                      : "Don't have an account? Sign up",
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: C.accent,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              const SizedBox(height: 32),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class InviteCodeScreen extends StatefulWidget {
+  final String userId;
+  const InviteCodeScreen({super.key, required this.userId});
+
+  @override
+  State<InviteCodeScreen> createState() => _InviteCodeScreenState();
+}
+
+class _InviteCodeScreenState extends State<InviteCodeScreen> {
+  final _codeCtrl = TextEditingController();
+  bool _loading = false;
+
+  Future<void> _submitCode() async {
+    final code = _codeCtrl.text.trim().toUpperCase();
+    if (code.isEmpty) return;
+
+    setState(() => _loading = true);
+    try {
+      // Look up the team by invite code
+      final result = await supabase
+          .from('teams')
+          .select('id, name')
+          .eq('invite_code', code)
+          .maybeSingle();
+
+      if (result == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Invalid invite code. Check with your coach.')),
+          );
+        }
+        return;
+      }
+
+      // Link the profile to the team
+      await supabase
+          .from('profiles')
+          .update({'team_id': result['id']})
+          .eq('id', widget.userId);
+
+      // Sign in is already handled by AuthGate listening to auth state
+      // Just pop and let AuthGate redirect to MainShell
+      if (mounted) Navigator.of(context).popUntil((r) => r.isFirst);
+
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Something went wrong: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _codeCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+
+    return Scaffold(
+      backgroundColor: C.bg(dark),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 28),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Spacer(),
+              Icon(Icons.key_outlined, size: 48, color: C.accent),
+              const SizedBox(height: 20),
+              Text(
+                'Enter invite code',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.5,
+                  color: C.text1(dark),
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Ask your coach for your team\'s invite code.',
+                style: TextStyle(fontSize: 15, color: C.text3(dark)),
+                textAlign: TextAlign.center,
+              ),
+              const Spacer(),
+              _InputField(
+                controller: _codeCtrl,
+                hint: 'Invite code',
+                icon: Icons.tag,
+                dark: dark,
+              ),
+              const SizedBox(height: 20),
+              PressScale(
+                onTap: _loading ? () {} : _submitCode,
                 child: Container(
                   height: 52,
                   decoration: BoxDecoration(
@@ -305,7 +495,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           )
                         : const Text(
-                            'Sign In',
+                            'Join Team',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 16,
@@ -314,12 +504,6 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                "Don't have an invite? Contact your coach.",
-                style: TextStyle(fontSize: 13, color: C.text3(dark)),
-                textAlign: TextAlign.center,
               ),
               const SizedBox(height: 32),
             ],

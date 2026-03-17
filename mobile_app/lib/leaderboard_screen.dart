@@ -1,24 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'app_config.dart';
 import 'design_system.dart';
 
 final supabase = Supabase.instance.client;
 
-// ─── Event categories ─────────────────────────────────────────────────────────
-
 const _eventGroups = <String, List<String>?>{
   'All': null,
   'Sprints': ['55', '60', '100', '200', '300', '400'],
-  'Mid': ['500', '600', '800', '1000', '1500', 'MILE', '1000', '3000', '5000'],
+  'Mid': ['500', '600', '800', '1000', '1500', 'MILE', '3000', '5000'],
   'Hurdles': ['55H', '60H', '110H', '400H', '300H', '100H'],
   'Jumps': ['HJ', 'LJ', 'TJ', 'PV'],
   'Throws': ['SP', 'DT', 'HT', 'JT'],
 };
 
 const _fieldEvents = ['HJ', 'LJ', 'TJ', 'PV', 'SP', 'DT', 'HT', 'JT'];
-
-// ─── Leaderboard screen ───────────────────────────────────────────────────────
 
 class LeaderboardScreen extends StatefulWidget {
   const LeaderboardScreen({super.key});
@@ -37,6 +32,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
   String _group = 'All';
   String _tab = 'heat';
   String _search = '';
+  String _gender = 'All';
   final _searchCtrl = TextEditingController();
 
   late final AnimationController _heatBarCtrl;
@@ -50,8 +46,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
       duration: const Duration(milliseconds: 1000),
     );
     _heatBarAnim = CurvedAnimation(parent: _heatBarCtrl, curve: kSpring);
-    _searchCtrl.addListener(
-        () => setState(() => _search = _searchCtrl.text));
+    _searchCtrl.addListener(() => setState(() => _search = _searchCtrl.text));
     _load();
   }
 
@@ -67,12 +62,11 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
     final raw = await supabase
         .from('track_prs')
         .select(
-            'event, best_display, best_mark_meters, best_time_seconds, improvement_delta_pct, athlete_id, profiles(full_name)')
+            'event, best_display, best_mark_meters, best_time_seconds, improvement_delta_pct, athlete_id, profiles(full_name, gender)')
         .order('improvement_delta_pct', ascending: false);
 
     final data = List<Map<String, dynamic>>.from(raw);
 
-    // Best entry per athlete for "All" mode
     final Map<String, Map<String, dynamic>> best = {};
     for (final e in data) {
       final id = e['athlete_id'] as String;
@@ -97,14 +91,19 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
     if (mounted) setState(() => _initialLoad = false);
   }
 
-  // ── Filtering & sorting ────────────────────────────────────────────────────
-
   List<Map<String, dynamic>> get _filtered {
     List<Map<String, dynamic>> list = _group == 'All'
         ? List.from(_grouped)
         : _entries
             .where((e) => (_eventGroups[_group] ?? []).contains(e['event']))
             .toList();
+
+    if (_gender != 'All') {
+      list = list.where((e) {
+        final g = e['profiles']?['gender'] ?? 'M';
+        return g == _gender;
+      }).toList();
+    }
 
     if (_search.isNotEmpty) {
       final q = _search.toLowerCase();
@@ -117,9 +116,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
     }
 
     if (_tab == 'heat') {
-      list.sort((a, b) =>
-          (b['improvement_delta_pct'] as num? ?? 0)
-              .compareTo(a['improvement_delta_pct'] as num? ?? 0));
+      list.sort((a, b) => (b['improvement_delta_pct'] as num? ?? 0)
+          .compareTo(a['improvement_delta_pct'] as num? ?? 0));
     } else {
       list.sort((a, b) {
         final af = _fieldEvents.contains(a['event']);
@@ -142,8 +140,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
         return d > m ? d : m;
       });
 
-  // ── Bottom sheet ───────────────────────────────────────────────────────────
-
   void _openDetail(Map<String, dynamic> entry) {
     showModalBottomSheet(
       context: context,
@@ -153,8 +149,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
       builder: (_) => _AthleteDetailSheet(entry: entry),
     );
   }
-
-  // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -184,7 +178,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Title row
           FadeSlideIn(
             delay: const Duration(milliseconds: 0),
             child: Row(
@@ -195,7 +188,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                   style: TextStyle(
                     fontSize: 32,
                     fontWeight: FontWeight.w700,
-                    letterSpacing: -0.96, // -0.03em @ 32px
+                    letterSpacing: -0.96,
                     color: C.text1(dark),
                   ),
                 ),
@@ -245,15 +238,13 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
           ),
           const SizedBox(height: 16),
 
-          // Search
           FadeSlideIn(
             delay: const Duration(milliseconds: 60),
-            child: _SearchField(
-                controller: _searchCtrl, dark: dark),
+            child: _SearchField(controller: _searchCtrl, dark: dark),
           ),
           const SizedBox(height: 16),
 
-          // Tabs
+          // Tabs + gender toggle in same row
           FadeSlideIn(
             delay: const Duration(milliseconds: 120),
             child: Row(
@@ -272,9 +263,17 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                   active: _tab == 'rankings',
                   onTap: () => setState(() => _tab = 'rankings'),
                 ),
+                const Spacer(),
+                // Gender toggle
+                _GenderToggle(
+                  gender: _gender,
+                  dark: dark,
+                  onChanged: (g) => setState(() => _gender = g),
+                ),
               ],
             ),
           ),
+          const SizedBox(height: 4),
         ],
       ),
     );
@@ -285,8 +284,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
       height: 52,
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding:
-            const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
         children: _eventGroups.keys.map((g) {
           final sel = g == _group;
           return Padding(
@@ -300,16 +298,15 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 250),
                 curve: kSpring,
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 7),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
                 decoration: BoxDecoration(
                   color: sel ? C.accent : Colors.transparent,
                   borderRadius: BorderRadius.circular(100),
-                  border: Border.all(
-                      color: sel ? C.accent : C.border(dark)),
+                  border: Border.all(color: sel ? C.accent : C.border(dark)),
                   boxShadow: sel
-                      ? [
-                          const BoxShadow(
+                      ? const [
+                          BoxShadow(
                             color: Color(0x4DE8372D),
                             blurRadius: 12,
                             offset: Offset(0, 2),
@@ -321,8 +318,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                   g,
                   style: TextStyle(
                     fontSize: 13,
-                    fontWeight:
-                        sel ? FontWeight.w600 : FontWeight.w500,
+                    fontWeight: sel ? FontWeight.w600 : FontWeight.w500,
                     letterSpacing: -0.1,
                     color: sel ? Colors.white : C.text2(dark),
                   ),
@@ -338,9 +334,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
   Widget _buildList(bool dark, List<Map<String, dynamic>> list) {
     if (_loading) {
       return const Center(
-        child: CircularProgressIndicator(
-            color: C.accent, strokeWidth: 2),
-      );
+          child: CircularProgressIndicator(color: C.accent, strokeWidth: 2));
     }
     if (list.isEmpty) {
       return Center(
@@ -352,10 +346,9 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
             Text(
               'No results found',
               style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w500,
-                color: C.text3(dark),
-              ),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                  color: C.text3(dark)),
             ),
           ],
         ),
@@ -364,13 +357,13 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
 
     final maxDelta = _maxDelta;
     return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 104),
+      padding: const EdgeInsets.only(bottom: 120),
       itemCount: list.length,
       itemBuilder: (_, i) {
         final entry = list[i];
         final id = entry['athlete_id'] as String? ?? i.toString();
         final delay = _initialLoad
-            ? Duration(milliseconds: 200 + i * 50)
+            ? Duration(milliseconds: 200 + i * 40)
             : Duration.zero;
 
         return FadeSlideIn(
@@ -387,6 +380,62 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
           ),
         );
       },
+    );
+  }
+}
+
+// ─── Gender toggle ────────────────────────────────────────────────────────────
+
+class _GenderToggle extends StatelessWidget {
+  final String gender;
+  final bool dark;
+  final ValueChanged<String> onChanged;
+
+  const _GenderToggle({
+    required this.gender,
+    required this.dark,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 30,
+      decoration: BoxDecoration(
+        color: C.surface2(dark),
+        borderRadius: BorderRadius.circular(100),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _pill('All', dark),
+          _pill('M', dark),
+          _pill('F', dark),
+        ],
+      ),
+    );
+  }
+
+  Widget _pill(String value, bool dark) {
+    final active = gender == value;
+    return GestureDetector(
+      onTap: () => onChanged(value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: active ? C.accent : Colors.transparent,
+          borderRadius: BorderRadius.circular(100),
+        ),
+        child: Text(
+          value,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: active ? Colors.white : C.text3(dark),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -432,19 +481,20 @@ class _SearchFieldState extends State<_SearchField> {
         children: [
           Padding(
             padding: const EdgeInsets.only(left: 12, right: 8),
-            child: Icon(Icons.search, size: 16, color: C.text3(widget.dark)),
+            child:
+                Icon(Icons.search, size: 16, color: C.text3(widget.dark)),
           ),
           Expanded(
             child: Focus(
               onFocusChange: (f) => setState(() => _focused = f),
               child: TextField(
                 controller: widget.controller,
-                style: TextStyle(
-                    fontSize: 15, color: C.text1(widget.dark)),
+                style:
+                    TextStyle(fontSize: 15, color: C.text1(widget.dark)),
                 decoration: InputDecoration(
                   hintText: 'Search athletes or events…',
-                  hintStyle:
-                      TextStyle(color: C.text3(widget.dark), fontSize: 15),
+                  hintStyle: TextStyle(
+                      color: C.text3(widget.dark), fontSize: 15),
                   border: InputBorder.none,
                   isDense: true,
                   contentPadding: EdgeInsets.zero,
@@ -546,6 +596,7 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
     final name = e['profiles']?['full_name'] ?? 'Unknown';
     final event = e['event'] ?? '';
     final delta = (e['improvement_delta_pct'] ?? 0.0) as num;
+    final gender = e['profiles']?['gender'] ?? 'M';
 
     final parts = name.toString().split(' ');
     final initials = parts.length >= 2
@@ -553,6 +604,10 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
         : name.toString().isNotEmpty
             ? name.toString()[0].toUpperCase()
             : '?';
+
+    // Top 3 get special treatment
+    final isFirst = widget.index == 0;
+    final isTop3 = widget.index < 3;
 
     return GestureDetector(
       onTapDown: (_) => setState(() => _pressed = true),
@@ -563,9 +618,7 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
       onTapCancel: () => setState(() => _pressed = false),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 120),
-        color: _pressed
-            ? C.accentSoft(dark)
-            : Colors.transparent,
+        color: _pressed ? C.accentSoft(dark) : Colors.transparent,
         padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
         child: Row(
           children: [
@@ -575,10 +628,12 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
               height: 32,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: widget.index == 0
+                color: isFirst
                     ? C.accent
-                    : C.surface2(dark),
-                boxShadow: widget.index == 0
+                    : isTop3
+                        ? C.accentSoft(dark)
+                        : C.surface2(dark),
+                boxShadow: isFirst
                     ? const [
                         BoxShadow(
                           color: Color(0x4DE8372D),
@@ -594,25 +649,25 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
-                  color: widget.index == 0
+                  color: isFirst
                       ? Colors.white
-                      : C.text2(dark),
+                      : isTop3
+                          ? C.accent
+                          : C.text2(dark),
                 ),
               ),
             ),
             const SizedBox(width: 14),
 
-            // Avatar
+            // Avatar with gender color hint
             Container(
               width: 42,
               height: 42,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [C.surface2(dark), C.surface3(dark)],
-                ),
+                color: gender == 'F'
+                    ? const Color(0xFFFDE8F0)
+                    : C.surface2(dark),
               ),
               alignment: Alignment.center,
               child: Text(
@@ -620,13 +675,15 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
-                  color: C.text2(dark),
+                  color: gender == 'F'
+                      ? const Color(0xFFD4537E)
+                      : C.text2(dark),
                 ),
               ),
             ),
             const SizedBox(width: 14),
 
-            // Info + optional heat bar
+            // Info + heat bar
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -689,8 +746,7 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
             if (widget.tab == 'heat')
               delta > 0
                   ? _DeltaBadge(delta: delta, dark: dark)
-                  : Text('—',
-                      style: TextStyle(color: C.text3(dark)))
+                  : Text('—', style: TextStyle(color: C.text3(dark)))
             else
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
@@ -707,14 +763,13 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
                   if (delta > 0)
                     Text(
                       '+${delta.toStringAsFixed(1)}%',
-                      style: TextStyle(
-                          fontSize: 11, color: C.text3(dark)),
+                      style:
+                          TextStyle(fontSize: 11, color: C.text3(dark)),
                     ),
                 ],
               ),
             const SizedBox(width: 6),
-            Icon(Icons.chevron_right,
-                size: 16, color: C.text3(dark)),
+            Icon(Icons.chevron_right, size: 16, color: C.text3(dark)),
           ],
         ),
       ),
@@ -733,8 +788,7 @@ class _DeltaBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding:
-          const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
       decoration: BoxDecoration(
         color: C.accentSoft(dark),
         borderRadius: BorderRadius.circular(100),
@@ -782,8 +836,7 @@ class _AthleteDetailSheetState extends State<_AthleteDetailSheet>
       vsync: this,
       duration: const Duration(milliseconds: 450),
     )..forward();
-    _slideAnim =
-        CurvedAnimation(parent: _ctrl, curve: kSpring);
+    _slideAnim = CurvedAnimation(parent: _ctrl, curve: kSpring);
     _scaleAnim = Tween<double>(begin: 0.92, end: 1.0)
         .animate(CurvedAnimation(parent: _ctrl, curve: kSpring));
   }
@@ -802,6 +855,7 @@ class _AthleteDetailSheetState extends State<_AthleteDetailSheet>
     final event = e['event'] ?? '';
     final bestDisplay = e['best_display'] ?? '—';
     final delta = (e['improvement_delta_pct'] ?? 0.0) as num;
+    final gender = e['profiles']?['gender'] ?? 'M';
 
     final parts = name.toString().split(' ');
     final initials = parts.length >= 2
@@ -840,7 +894,6 @@ class _AthleteDetailSheetState extends State<_AthleteDetailSheet>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Drag handle
               Padding(
                 padding: const EdgeInsets.only(top: 12, bottom: 8),
                 child: Container(
@@ -853,29 +906,34 @@ class _AthleteDetailSheetState extends State<_AthleteDetailSheet>
                 ),
               ),
               Padding(
-                padding:
-                    const EdgeInsets.fromLTRB(24, 8, 24, 32),
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // ── Header ─────────────────────────────────────
                     Row(
                       children: [
                         Container(
                           width: 64,
                           height: 64,
-                          decoration: const BoxDecoration(
+                          decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             gradient: LinearGradient(
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
-                              colors: [C.accent, C.accentAlt],
+                              colors: gender == 'F'
+                                  ? const [
+                                      Color(0xFFD4537E),
+                                      Color(0xFFED93B1)
+                                    ]
+                                  : const [C.accent, C.accentAlt],
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: Color(0x59E8372D),
+                                color: gender == 'F'
+                                    ? const Color(0x59D4537E)
+                                    : const Color(0x59E8372D),
                                 blurRadius: 20,
-                                offset: Offset(0, 4),
+                                offset: const Offset(0, 4),
                               )
                             ],
                           ),
@@ -909,6 +967,9 @@ class _AthleteDetailSheetState extends State<_AthleteDetailSheet>
                                 spacing: 8,
                                 children: [
                                   _Badge(event, dark),
+                                  _Badge(
+                                      gender == 'F' ? 'Women' : 'Men',
+                                      dark),
                                 ],
                               ),
                             ],
@@ -930,8 +991,6 @@ class _AthleteDetailSheetState extends State<_AthleteDetailSheet>
                       ],
                     ),
                     const SizedBox(height: 28),
-
-                    // ── Stats ───────────────────────────────────────
                     Row(
                       children: [
                         Expanded(
@@ -985,8 +1044,7 @@ class _Badge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding:
-          const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
       decoration: BoxDecoration(
         color: C.surface2(dark),
         borderRadius: BorderRadius.circular(100),
@@ -1021,8 +1079,8 @@ class _StatCard extends StatelessWidget {
     return GlassCard(
       forceDark: dark,
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-            horizontal: 12, vertical: 16),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
         child: Column(
           children: [
             Text(
