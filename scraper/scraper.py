@@ -200,7 +200,8 @@ def scrape_team_roster(page, team_url, team_id):
     return athletes
 
 def run_scraper():
-    team_url = "https://www.tfrrs.org/teams/tf/NJ_college_m_Stevens.html"
+    team_urls = ["https://www.tfrrs.org/teams/tf/NJ_college_m_Stevens.html",  
+                 "https://www.tfrrs.org/teams/tf/NJ_college_f_Stevens.html" ]
 
     # get team_id from Supabase
     team_result = supabase.table("teams").select("id").execute()
@@ -217,43 +218,44 @@ def run_scraper():
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
         })
 
-        # scrape roster
-        roster = scrape_team_roster(page, team_url, team_id)
+        for team_url in team_urls:
+            gender = 'F' if '_f_' in team_url else 'M'
+            roster = scrape_team_roster(page, team_url, team_id)
 
-        for athlete in roster:
-            # check if athlete already exists in profiles
-            try:
-                existing = supabase.table("profiles") \
-                    .select("id") \
-                    .eq("tfrrs_athlete_id", athlete["tfrrs_id"]) \
-                    .maybe_single() \
-                    .execute()
-            except Exception:
-                existing = None
+            for athlete in roster:
+                try:
+                    existing = supabase.table("profiles") \
+                        .select("id") \
+                        .eq("tfrrs_athlete_id", athlete["tfrrs_id"]) \
+                        .maybe_single() \
+                        .execute()
+                except Exception:
+                    existing = None
 
-            if existing and existing.data:
-                athlete_id = existing.data["id"]
-                print(f"\nExisting athlete: {athlete['name']}")
-            else:
-                import uuid
-                new_id = str(uuid.uuid4())
-                supabase.table("profiles").insert({
-                    "id": new_id,
-                    "team_id": team_id,
-                    "role": "athlete",
-                    "full_name": athlete["name"],
-                    "tfrrs_athlete_id": athlete["tfrrs_id"]
-                }).execute()
-                athlete_id = new_id
-                print(f"\nNew athlete added: {athlete['name']}")
+                if existing and existing.data:
+                    athlete_id = existing.data["id"]
+                    print(f"\nExisting athlete: {athlete['name']}")
+                else:
+                    import uuid
+                    new_id = str(uuid.uuid4())
+                    supabase.table("profiles").insert({
+                        "id": new_id,
+                        "team_id": team_id,
+                        "role": "athlete",
+                        "full_name": athlete["name"],
+                        "tfrrs_athlete_id": athlete["tfrrs_id"],
+                        "gender": gender,
+                    }).execute()
+                    athlete_id = new_id
+                    print(f"\nNew athlete added: {athlete['name']} ({gender})")
 
-            scrape_athlete(
-                page=page,
-                tfrrs_athlete_id=athlete["tfrrs_id"],
-                athlete_id=athlete_id,
-                team_id=team_id
-            )
-            page.wait_for_timeout(3000)
+                scrape_athlete(
+                    page=page,
+                    tfrrs_athlete_id=athlete["tfrrs_id"],
+                    athlete_id=athlete_id,
+                    team_id=team_id
+                )
+                page.wait_for_timeout(3000)
 
         browser.close()
     print("\nScrape complete.")
