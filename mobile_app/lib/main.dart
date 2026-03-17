@@ -1,18 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'app_config.dart';
+import 'design_system.dart';
 import 'leaderboard_screen.dart';
 import 'profile_screen.dart';
 import 'settings_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
   await Supabase.initialize(
     url: AppConfig.supabaseUrl,
     anonKey: AppConfig.supabaseAnonKey,
   );
-
   runApp(const PRVaultApp());
 }
 
@@ -23,114 +22,84 @@ class PRVaultApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'PR Vault',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.light,
-        scaffoldBackgroundColor: const Color(0xFFF8F7F4),
-        colorScheme: ColorScheme.light(
-          primary: const Color(0xFFB80C09),
-          secondary: const Color(0xFFB80C09),
-          surface: const Color(0xFFFFFFFF),
-          onPrimary: Colors.white,
-          onSurface: const Color(0xFF141301),
-        ),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFFFFFFFF),
-          foregroundColor: Color(0xFF141301),
-          elevation: 0,
-          surfaceTintColor: Colors.transparent,
-          titleTextStyle: TextStyle(
-            color: Color(0xFF141301),
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: themeModeNotifier,
+      builder: (context, mode, _) {
+        return MaterialApp(
+          title: 'PR Vault',
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            useMaterial3: true,
+            brightness: Brightness.light,
+            scaffoldBackgroundColor: C.bg(false),
+            colorScheme: ColorScheme.light(
+              primary: C.accent,
+              secondary: C.accent,
+              surface: C.surface(false),
+              onPrimary: Colors.white,
+              onSurface: C.text1(false),
+            ),
+            appBarTheme: AppBarTheme(
+              backgroundColor: C.surface(false),
+              foregroundColor: C.text1(false),
+              elevation: 0,
+              surfaceTintColor: Colors.transparent,
+              titleTextStyle: TextStyle(
+                color: C.text1(false),
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            chipTheme: ChipThemeData(
+              backgroundColor: C.surface2(false),
+              selectedColor: C.accent,
+              labelStyle: TextStyle(fontSize: 12, color: C.text2(false)),
+              secondaryLabelStyle:
+                  const TextStyle(color: Colors.white, fontSize: 12),
+              side: BorderSide.none,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(100)),
+            ),
+            dividerColor: C.border(false),
           ),
-        ),
-        tabBarTheme: const TabBarThemeData(
-          labelColor: Color(0xFFB80C09),
-          unselectedLabelColor: Color(0xFF888888),
-          indicatorColor: Color(0xFFB80C09),
-          indicatorSize: TabBarIndicatorSize.label,
-        ),
-        chipTheme: ChipThemeData(
-          backgroundColor: const Color(0xFFF0EDEA),
-          selectedColor: const Color(0xFFB80C09),
-          labelStyle: const TextStyle(fontSize: 12),
-          secondaryLabelStyle: const TextStyle(
-            color: Colors.white,
-            fontSize: 12,
+          darkTheme: ThemeData(
+            useMaterial3: true,
+            brightness: Brightness.dark,
+            scaffoldBackgroundColor: C.bg(true),
+            colorScheme: ColorScheme.dark(
+              primary: C.accent,
+              secondary: C.accent,
+              surface: C.surface(true),
+              onPrimary: Colors.white,
+              onSurface: C.text1(true),
+            ),
+            appBarTheme: AppBarTheme(
+              backgroundColor: C.surface(true),
+              foregroundColor: C.text1(true),
+              elevation: 0,
+              surfaceTintColor: Colors.transparent,
+              titleTextStyle: TextStyle(
+                color: C.text1(true),
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            chipTheme: ChipThemeData(
+              backgroundColor: C.surface2(true),
+              selectedColor: C.accent,
+              labelStyle: TextStyle(fontSize: 12, color: C.text2(true)),
+              secondaryLabelStyle:
+                  const TextStyle(color: Colors.white, fontSize: 12),
+              side: BorderSide.none,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(100)),
+            ),
+            dividerColor: C.border(true),
           ),
-          side: BorderSide.none,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-        ),
-        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-          backgroundColor: Color(0xFFFFFFFF),
-          selectedItemColor: Color(0xFFB80C09),
-          unselectedItemColor: Color(0xFF888888),
-          elevation: 0,
-          type: BottomNavigationBarType.fixed,
-        ),
-        dividerColor: const Color(0xFFEEECEA),
-      ),
-      darkTheme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF1C1B08),
-        colorScheme: ColorScheme.dark(
-          primary: const Color(0xFFB80C09),
-          secondary: const Color(0xFFB80C09),
-          surface: const Color(0xFF141301),
-          onPrimary: Colors.white,
-          onSurface: const Color(0xFFE5E7E6),
-        ),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF141301),
-          foregroundColor: Color(0xFFE5E7E6),
-          elevation: 0,
-          surfaceTintColor: Colors.transparent,
-          titleTextStyle: TextStyle(
-            color: Color(0xFFE5E7E6),
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        tabBarTheme: const TabBarThemeData(
-          labelColor: Color(0xFFB80C09),
-          unselectedLabelColor: Color(0xFF555555),
-          indicatorColor: Color(0xFFB80C09),
-          indicatorSize: TabBarIndicatorSize.label,
-        ),
-        chipTheme: ChipThemeData(
-          backgroundColor: const Color(0x14FFFFFF),
-          selectedColor: const Color(0xFFB80C09),
-          labelStyle: const TextStyle(
-            color: Color(0xFF888888),
-            fontSize: 12,
-          ),
-          secondaryLabelStyle: const TextStyle(
-            color: Colors.white,
-            fontSize: 12,
-          ),
-          side: BorderSide.none,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-        ),
-        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-          backgroundColor: Color(0xFF141301),
-          selectedItemColor: Color(0xFFB80C09),
-          unselectedItemColor: Color(0xFF555555),
-          elevation: 0,
-          type: BottomNavigationBarType.fixed,
-        ),
-        dividerColor: const Color(0x0FFFFFFF),
-      ),
-      themeMode: ThemeMode.system,
-      home: const AuthGate(),
+          themeMode: mode,
+          home: const AuthGate(),
+        );
+      },
     );
   }
 }
@@ -145,9 +114,7 @@ class AuthGate extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.hasData) {
           final session = snapshot.data!.session;
-          if (session != null) {
-            return const MainShell();
-          }
+          if (session != null) return const MainShell();
         }
         return const LoginScreen();
       },
@@ -173,42 +140,23 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
+    final dark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      body: _screens[_currentIndex],
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          border: Border(
-            top: BorderSide(
-              color: isDark
-                  ? const Color(0x18FFFFFF)
-                  : const Color(0xFFE0DEDB),
-              width: 0.5,
+      backgroundColor: C.bg(dark),
+      body: Stack(
+        children: [
+          _screens[_currentIndex],
+          Positioned(
+            left: 24,
+            right: 24,
+            bottom: 32,
+            child: _FloatingNav(
+              currentIndex: _currentIndex,
+              onTap: (i) => setState(() => _currentIndex = i),
+              dark: dark,
             ),
           ),
-        ),
-        child: BottomNavigationBar(
-          currentIndex: _currentIndex,
-          onTap: (i) => setState(() => _currentIndex = i),
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.leaderboard_outlined),
-              activeIcon: Icon(Icons.leaderboard),
-              label: 'Leaderboard',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.person_outline),
-              activeIcon: Icon(Icons.person),
-              label: 'Profile',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.settings_outlined),
-              activeIcon: Icon(Icons.settings),
-              label: 'Settings',
-            ),
-          ],
-        ),
+        ],
       ),
     );
   }
@@ -222,22 +170,21 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _passCtrl = TextEditingController();
   bool _loading = false;
 
   Future<void> _signIn() async {
     setState(() => _loading = true);
     try {
       await supabase.auth.signInWithPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
+        email: _emailCtrl.text.trim(),
+        password: _passCtrl.text.trim(),
       );
     } on AuthException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message)),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.message)));
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -245,148 +192,300 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   @override
+  void dispose() {
+    _emailCtrl.dispose();
+    _passCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final dark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
+      backgroundColor: C.bg(dark),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(28.0),
+          padding: const EdgeInsets.symmetric(horizontal: 28),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Logo placeholder
+              const Spacer(),
               Center(
                 child: Container(
-                  width: 64,
-                  height: 64,
+                  width: 72,
+                  height: 72,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFB80C09),
-                    borderRadius: BorderRadius.circular(16),
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [C.accent, C.accentAlt],
+                    ),
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x4DB80C09),
+                        blurRadius: 24,
+                        offset: Offset(0, 8),
+                      ),
+                    ],
                   ),
                   child: const Center(
                     child: Text(
                       'V',
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: 32,
+                        fontSize: 36,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
-              const Text(
+              const SizedBox(height: 20),
+              Text(
                 'PR Vault',
                 style: TextStyle(
-                  fontSize: 28,
+                  fontSize: 32,
                   fontWeight: FontWeight.w700,
+                  letterSpacing: -0.96,
+                  color: C.text1(dark),
                 ),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 4),
-              const Text(
+              const SizedBox(height: 6),
+              Text(
                 'Track. Lift. Compete.',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Color(0xFF888888),
-                ),
+                style: TextStyle(fontSize: 15, color: C.text3(dark)),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 48),
-              TextField(
-                controller: _emailController,
-                decoration: InputDecoration(
-                  labelText: 'Email',
-                  prefixIcon: const Icon(Icons.email_outlined, size: 18),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(
-                      color: isDark
-                          ? const Color(0x18FFFFFF)
-                          : const Color(0xFFE0DEDB),
-                    ),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(
-                      color: isDark
-                          ? const Color(0x18FFFFFF)
-                          : const Color(0xFFE0DEDB),
-                    ),
-                  ),
-                ),
+              const Spacer(),
+              _InputField(
+                controller: _emailCtrl,
+                hint: 'Email',
+                icon: Icons.mail_outline,
+                dark: dark,
                 keyboardType: TextInputType.emailAddress,
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: _passwordController,
-                decoration: InputDecoration(
-                  labelText: 'Password',
-                  prefixIcon: const Icon(Icons.lock_outline, size: 18),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(
-                      color: isDark
-                          ? const Color(0x18FFFFFF)
-                          : const Color(0xFFE0DEDB),
-                    ),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(
-                      color: isDark
-                          ? const Color(0x18FFFFFF)
-                          : const Color(0xFFE0DEDB),
-                    ),
-                  ),
-                ),
-                obscureText: true,
+              _InputField(
+                controller: _passCtrl,
+                hint: 'Password',
+                icon: Icons.lock_outline,
+                dark: dark,
+                obscure: true,
               ),
               const SizedBox(height: 20),
-              SizedBox(
-                height: 48,
-                child: ElevatedButton(
-                  onPressed: _loading ? null : _signIn,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFB80C09),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
+              PressScale(
+                onTap: _loading ? () {} : _signIn,
+                child: Container(
+                  height: 52,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [C.accent, C.accentAlt],
                     ),
-                    elevation: 0,
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x4DB80C09),
+                        blurRadius: 20,
+                        offset: Offset(0, 6),
+                      ),
+                    ],
                   ),
-                  child: _loading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
+                  child: Center(
+                    child: _loading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Text(
+                            'Sign In',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                        )
-                      : const Text(
-                          'Sign In',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
-              const Text(
+              Text(
                 "Don't have an invite? Contact your coach.",
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Color(0xFF888888),
-                ),
+                style: TextStyle(fontSize: 13, color: C.text3(dark)),
                 textAlign: TextAlign.center,
               ),
+              const SizedBox(height: 32),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _InputField extends StatelessWidget {
+  final TextEditingController controller;
+  final String hint;
+  final IconData icon;
+  final bool dark;
+  final bool obscure;
+  final TextInputType? keyboardType;
+
+  const _InputField({
+    required this.controller,
+    required this.hint,
+    required this.icon,
+    required this.dark,
+    this.obscure = false,
+    this.keyboardType,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 52,
+      decoration: BoxDecoration(
+        color: C.surface(dark),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: C.border(dark)),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(width: 16),
+          Icon(icon, size: 18, color: C.text3(dark)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              obscureText: obscure,
+              keyboardType: keyboardType,
+              style: TextStyle(fontSize: 15, color: C.text1(dark)),
+              decoration: InputDecoration(
+                hintText: hint,
+                hintStyle: TextStyle(color: C.text3(dark), fontSize: 15),
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+        ],
+      ),
+    );
+  }
+}
+
+class _FloatingNav extends StatelessWidget {
+  final int currentIndex;
+  final ValueChanged<int> onTap;
+  final bool dark;
+
+  const _FloatingNav({
+    required this.currentIndex,
+    required this.onTap,
+    required this.dark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 64,
+      decoration: BoxDecoration(
+        color: dark ? const Color(0xFF1C1C1E) : Colors.white,
+        borderRadius: BorderRadius.circular(32),
+        border: Border.all(color: C.border(dark), width: 0.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: dark ? 0.4 : 0.12),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          _NavItem(
+            icon: Icons.leaderboard_outlined,
+            activeIcon: Icons.leaderboard,
+            label: 'Leaderboard',
+            active: currentIndex == 0,
+            onTap: () => onTap(0),
+            dark: dark,
+          ),
+          _NavItem(
+            icon: Icons.person_outline,
+            activeIcon: Icons.person,
+            label: 'Profile',
+            active: currentIndex == 1,
+            onTap: () => onTap(1),
+            dark: dark,
+          ),
+          _NavItem(
+            icon: Icons.settings_outlined,
+            activeIcon: Icons.settings,
+            label: 'Settings',
+            active: currentIndex == 2,
+            onTap: () => onTap(2),
+            dark: dark,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NavItem extends StatelessWidget {
+  final IconData icon;
+  final IconData activeIcon;
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+  final bool dark;
+
+  const _NavItem({
+    required this.icon,
+    required this.activeIcon,
+    required this.label,
+    required this.active,
+    required this.onTap,
+    required this.dark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              active ? activeIcon : icon,
+              size: 22,
+              color: active ? C.accent : C.text3(dark),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight:
+                    active ? FontWeight.w600 : FontWeight.w400,
+                color: active ? C.accent : C.text3(dark),
+              ),
+            ),
+          ],
         ),
       ),
     );
