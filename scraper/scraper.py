@@ -200,8 +200,11 @@ def scrape_team_roster(page, team_url, team_id):
     return athletes
 
 def run_scraper():
-    team_urls = ["https://www.tfrrs.org/teams/tf/NJ_college_m_Stevens.html",  
-                 "https://www.tfrrs.org/teams/tf/NJ_college_f_Stevens.html" ]
+    # scrape both men's and women's teams so the roster stays complete
+    team_urls = [
+        "https://www.tfrrs.org/teams/tf/NJ_college_m_Stevens.html",
+        "https://www.tfrrs.org/teams/tf/NJ_college_f_Stevens.html",
+    ]
 
     # get team_id from Supabase
     team_result = supabase.table("teams").select("id").execute()
@@ -220,6 +223,7 @@ def run_scraper():
 
         for team_url in team_urls:
             gender = 'F' if '_f_' in team_url else 'M'
+            # fetch roster once per team/gender to avoid duplicate scrapes
             roster = scrape_team_roster(page, team_url, team_id)
 
             for athlete in roster:
