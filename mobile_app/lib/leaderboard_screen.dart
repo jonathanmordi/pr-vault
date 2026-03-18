@@ -4,6 +4,8 @@ import 'design_system.dart';
 
 final supabase = Supabase.instance.client;
 
+// ─── Event categories with subcategories ─────────────────────────────────────
+
 const _eventGroups = <String, List<String>?>{
   'All': null,
   'Sprints': ['55', '60', '100', '200', '300', '400'],
@@ -26,10 +28,12 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
     with TickerProviderStateMixin {
   List<Map<String, dynamic>> _entries = [];
   List<Map<String, dynamic>> _grouped = [];
+  Map<String, List<double>> _sparklines = {};
   bool _loading = true;
   bool _initialLoad = true;
 
   String _group = 'All';
+  String? _subEvent; // specific event within a group
   String _tab = 'heat';
   String _search = '';
   String _gender = 'All';
@@ -59,6 +63,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
 
   Future<void> _load() async {
     setState(() => _loading = true);
+
     final raw = await supabase
         .from('track_prs')
         .select(
@@ -66,6 +71,23 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
         .order('improvement_delta_pct', ascending: false);
 
     final data = List<Map<String, dynamic>>.from(raw);
+
+    // Build sparklines from meet_appearances
+    final appearances = await supabase
+        .from('meet_appearances')
+        .select('athlete_id, event, time_seconds, mark_meters, meet_date')
+        .not('meet_date', 'is', null)
+        .order('meet_date', ascending: true);
+
+    final Map<String, List<double>> sparklines = {};
+    for (final a in List<Map<String, dynamic>>.from(appearances)) {
+      final id = a['athlete_id'] as String;
+      final val = (a['time_seconds'] as num?)?.toDouble() ??
+          (a['mark_meters'] as num?)?.toDouble();
+      if (val != null && val > 0) {
+        sparklines.putIfAbsent(id, () => []).add(val);
+      }
+    }
 
     final Map<String, Map<String, dynamic>> best = {};
     for (final e in data) {
@@ -83,6 +105,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
     setState(() {
       _entries = data;
       _grouped = grouped;
+      _sparklines = sparklines;
       _loading = false;
     });
 
@@ -92,11 +115,17 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
   }
 
   List<Map<String, dynamic>> get _filtered {
-    List<Map<String, dynamic>> list = _group == 'All'
-        ? List.from(_grouped)
-        : _entries
-            .where((e) => (_eventGroups[_group] ?? []).contains(e['event']))
-            .toList();
+    List<Map<String, dynamic>> list;
+
+    if (_subEvent != null) {
+      list = _entries.where((e) => e['event'] == _subEvent).toList();
+    } else if (_group == 'All') {
+      list = List.from(_grouped);
+    } else {
+      list = _entries
+          .where((e) => (_eventGroups[_group] ?? []).contains(e['event']))
+          .toList();
+    }
 
     if (_gender != 'All') {
       list = list.where((e) {
@@ -164,6 +193,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
           children: [
             _buildHeader(dark),
             _buildChips(dark),
+            if (_group != 'All' && _eventGroups[_group] != null)
+              _buildSubChips(dark),
             Container(height: 0.5, color: C.border(dark)),
             Expanded(child: _buildList(dark, list)),
           ],
@@ -238,13 +269,55 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
           ),
           const SizedBox(height: 16),
 
+          // Search
           FadeSlideIn(
             delay: const Duration(milliseconds: 60),
-            child: _SearchField(controller: _searchCtrl, dark: dark),
+            child: Container(
+              height: 42,
+              decoration: BoxDecoration(
+                color: dark
+                    ? const Color(0xFF2C2C2E)
+                    : const Color(0xFFEEECE9),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(left: 12, right: 8),
+                    child: Icon(Icons.search,
+                        size: 16, color: C.text3(dark)),
+                  ),
+                  Expanded(
+                    child: TextField(
+                      controller: _searchCtrl,
+                      style: TextStyle(
+                          fontSize: 15, color: C.text1(dark)),
+                      decoration: InputDecoration(
+                        hintText: 'Search athletes or events…',
+                        hintStyle: TextStyle(
+                            color: C.text3(dark), fontSize: 15),
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ),
+                  if (_searchCtrl.text.isNotEmpty)
+                    GestureDetector(
+                      onTap: _searchCtrl.clear,
+                      child: Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Icon(Icons.close,
+                            size: 16, color: C.text3(dark)),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
           const SizedBox(height: 16),
 
-          // Tabs + gender toggle in same row
+          // Tabs + gender
           FadeSlideIn(
             delay: const Duration(milliseconds: 120),
             child: Row(
@@ -264,7 +337,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                   onTap: () => setState(() => _tab = 'rankings'),
                 ),
                 const Spacer(),
-                // Gender toggle
                 _GenderToggle(
                   gender: _gender,
                   dark: dark,
@@ -292,18 +364,20 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
             child: PressScale(
               pressedScale: 0.96,
               onTap: () {
-                setState(() => _group = g);
+                setState(() {
+                  _group = g;
+                  _subEvent = null;
+                });
                 if (_tab == 'heat') _heatBarCtrl.forward(from: 0);
               },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 250),
                 curve: kSpring,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+                height: 36,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
-                  color: sel ? C.accent : Colors.transparent,
+                  color: sel ? C.accent : C.surface2(dark),
                   borderRadius: BorderRadius.circular(100),
-                  border: Border.all(color: sel ? C.accent : C.border(dark)),
                   boxShadow: sel
                       ? const [
                           BoxShadow(
@@ -314,11 +388,13 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                         ]
                       : null,
                 ),
+                alignment: Alignment.center,
                 child: Text(
                   g,
                   style: TextStyle(
                     fontSize: 13,
-                    fontWeight: sel ? FontWeight.w600 : FontWeight.w500,
+                    fontWeight:
+                        sel ? FontWeight.w600 : FontWeight.w500,
                     letterSpacing: -0.1,
                     color: sel ? Colors.white : C.text2(dark),
                   ),
@@ -331,10 +407,84 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
     );
   }
 
+  Widget _buildSubChips(bool dark) {
+    final events = _eventGroups[_group] ?? [];
+    return SizedBox(
+      height: 44,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: GestureDetector(
+              onTap: () => setState(() => _subEvent = null),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                decoration: BoxDecoration(
+                  color: _subEvent == null
+                      ? C.text2(dark)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(100),
+                  border: Border.all(
+                      color: _subEvent == null
+                          ? Colors.transparent
+                          : C.border(dark)),
+                ),
+                child: Text(
+                  'All ${_group}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: _subEvent == null
+                        ? (dark ? C.bg(dark) : Colors.white)
+                        : C.text3(dark),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          ...events.map((ev) {
+            final sel = _subEvent == ev;
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: GestureDetector(
+                onTap: () => setState(() => _subEvent = ev),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: sel ? C.accent : Colors.transparent,
+                    borderRadius: BorderRadius.circular(100),
+                    border: Border.all(
+                        color: sel ? C.accent : C.border(dark)),
+                  ),
+                  child: Text(
+                    ev,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: sel ? Colors.white : C.text2(dark),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
   Widget _buildList(bool dark, List<Map<String, dynamic>> list) {
     if (_loading) {
       return const Center(
-          child: CircularProgressIndicator(color: C.accent, strokeWidth: 2));
+          child:
+              CircularProgressIndicator(color: C.accent, strokeWidth: 2));
     }
     if (list.isEmpty) {
       return Center(
@@ -343,45 +493,286 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
           children: [
             Icon(Icons.search, size: 40, color: C.text3(dark)),
             const SizedBox(height: 12),
-            Text(
-              'No results found',
-              style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
-                  color: C.text3(dark)),
-            ),
+            Text('No results found',
+                style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    color: C.text3(dark))),
           ],
         ),
       );
     }
 
     final maxDelta = _maxDelta;
+    final showPodium = _tab == 'heat' &&
+      _group == 'All' &&
+      _subEvent == null &&
+      list.length >= 3;
+
     return ListView.builder(
       padding: const EdgeInsets.only(bottom: 120),
-      itemCount: list.length,
+      itemCount: list.length + (list.length >= 3 ? 1 : 0),
       itemBuilder: (_, i) {
-        final entry = list[i];
-        final id = entry['athlete_id'] as String? ?? i.toString();
+        // Insert podium at top
+        if (showPodium && i == 0) {
+          return _PodiumCard(
+            entries: list.take(3).toList(),
+            dark: dark,
+            onTap: _openDetail,
+          );
+        }
+        final actualIndex = showPodium ? i - 1 : i;
+        if(actualIndex < 0 || actualIndex >= list.length){
+          return const SizedBox.shrink();
+        }
+        final entry = list[actualIndex];
+        final id = entry['athlete_id'] as String? ?? actualIndex.toString();
         final delay = _initialLoad
-            ? Duration(milliseconds: 200 + i * 40)
+            ? Duration(milliseconds: 200 + actualIndex * 40)
             : Duration.zero;
+        final sparkData = _sparklines[id] ?? [];
 
         return FadeSlideIn(
           key: ValueKey('lb-$id-${entry['event']}'),
           delay: delay,
           child: _LeaderboardRow(
             entry: entry,
-            index: i,
+            index: actualIndex,
             tab: _tab,
             maxDelta: maxDelta,
             heatAnim: _heatBarAnim,
             dark: dark,
+            sparkData: sparkData,
             onTap: () => _openDetail(entry),
           ),
         );
       },
     );
   }
+}
+
+// ─── Podium card ──────────────────────────────────────────────────────────────
+
+class _PodiumCard extends StatelessWidget {
+  final List<Map<String, dynamic>> entries;
+  final bool dark;
+  final Function(Map<String, dynamic>) onTap;
+
+  const _PodiumCard({
+    required this.entries,
+    required this.dark,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+      child: GlassCard(
+        forceDark: dark,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.local_fire_department,
+                      size: 14, color: C.accent),
+                  const SizedBox(width: 6),
+                  Text(
+                    'TOP IMPROVERS',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.8,
+                      color: C.accent,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: entries.asMap().entries.map((e) {
+                  final idx = e.key;
+                  final entry = e.value;
+                  final name =
+                      entry['profiles']?['full_name'] ?? 'Unknown';
+                  final delta =
+                      (entry['improvement_delta_pct'] ?? 0.0) as num;
+                  final event = entry['event'] ?? '';
+                  final gender =
+                      entry['profiles']?['gender'] ?? 'M';
+
+                  final parts = name.toString().split(' ');
+                  final initials = parts.length >= 2
+                      ? '${parts[0][0]}${parts[1][0]}'.toUpperCase()
+                      : name.toString().isNotEmpty
+                          ? name.toString()[0].toUpperCase()
+                          : '?';
+
+                  final medals = ['🥇', '🥈', '🥉'];
+                  final sizes = [52.0, 44.0, 44.0];
+
+                  return Expanded(
+                    child: GestureDetector(
+                      onTap: () => onTap(entry),
+                      child: Column(
+                        children: [
+                          Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Container(
+                                width: sizes[idx],
+                                height: sizes[idx],
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: gender == 'F'
+                                        ? const [
+                                            Color(0xFFD4537E),
+                                            Color(0xFFED93B1)
+                                          ]
+                                        : idx == 0
+                                            ? const [
+                                                C.accent,
+                                                C.accentAlt
+                                              ]
+                                            : [
+                                                C.surface2(dark),
+                                                C.surface3(dark)
+                                              ],
+                                  ),
+                                  boxShadow: idx == 0
+                                      ? const [
+                                          BoxShadow(
+                                            color: Color(0x4DE8372D),
+                                            blurRadius: 16,
+                                            offset: Offset(0, 4),
+                                          )
+                                        ]
+                                      : null,
+                                ),
+                                alignment: Alignment.center,
+                                child: Text(
+                                  initials,
+                                  style: TextStyle(
+                                    fontSize: idx == 0 ? 18 : 14,
+                                    fontWeight: FontWeight.w800,
+                                    color: idx == 0 || gender == 'F'
+                                        ? Colors.white
+                                        : C.text2(dark),
+                                  ),
+                                ),
+                              ),
+                              Positioned(
+                                top: -6,
+                                right: -6,
+                                child: Text(medals[idx],
+                                    style:
+                                        const TextStyle(fontSize: 16)),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            parts.isNotEmpty ? parts[0] : name,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: C.text1(dark),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                          ),
+                          Text(
+                            event,
+                            style: TextStyle(
+                                fontSize: 10, color: C.text3(dark)),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: C.accentSoft(dark),
+                              borderRadius: BorderRadius.circular(100),
+                            ),
+                            child: Text(
+                              '+${delta.toStringAsFixed(2)}%',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: C.accent,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Sparkline painter ────────────────────────────────────────────────────────
+
+class _SparklinePainter extends CustomPainter {
+  final List<double> data;
+  final bool isField;
+  final Color color;
+
+  const _SparklinePainter({
+    required this.data,
+    required this.isField,
+    required this.color,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (data.length < 2) return;
+
+    final recent = data.length > 8 ? data.sublist(data.length - 8) : data;
+    final minV = recent.reduce((a, b) => a < b ? a : b);
+    final maxV = recent.reduce((a, b) => a > b ? a : b);
+    if (maxV == minV) return;
+
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+
+    final path = Path();
+    for (var i = 0; i < recent.length; i++) {
+      final x = (i / (recent.length - 1)) * size.width;
+      // For track: lower is better (invert). For field: higher is better.
+      final norm = isField
+          ? (recent[i] - minV) / (maxV - minV)
+          : 1 - (recent[i] - minV) / (maxV - minV);
+      final y = size.height - norm * size.height;
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(_SparklinePainter old) =>
+      old.data != data || old.color != color;
 }
 
 // ─── Gender toggle ────────────────────────────────────────────────────────────
@@ -407,111 +798,29 @@ class _GenderToggle extends StatelessWidget {
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
-        children: [
-          _pill('All', dark),
-          _pill('M', dark),
-          _pill('F', dark),
-        ],
-      ),
-    );
-  }
-
-  Widget _pill(String value, bool dark) {
-    final active = gender == value;
-    return GestureDetector(
-      onTap: () => onChanged(value),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: active ? C.accent : Colors.transparent,
-          borderRadius: BorderRadius.circular(100),
-        ),
-        child: Text(
-          value,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: active ? Colors.white : C.text3(dark),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ─── Search field ─────────────────────────────────────────────────────────────
-
-class _SearchField extends StatefulWidget {
-  final TextEditingController controller;
-  final bool dark;
-
-  const _SearchField({required this.controller, required this.dark});
-
-  @override
-  State<_SearchField> createState() => _SearchFieldState();
-}
-
-class _SearchFieldState extends State<_SearchField> {
-  bool _focused = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOut,
-      height: 42,
-      decoration: BoxDecoration(
-        color: C.surface2(widget.dark),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: _focused ? C.accent : C.border(widget.dark),
-        ),
-        boxShadow: _focused
-            ? [
-                BoxShadow(
-                  color: C.accent.withValues(alpha: 0.15),
-                  blurRadius: 0,
-                  spreadRadius: 3,
-                ),
-              ]
-            : [],
-      ),
-      child: Row(
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(left: 12, right: 8),
-            child:
-                Icon(Icons.search, size: 16, color: C.text3(widget.dark)),
-          ),
-          Expanded(
-            child: Focus(
-              onFocusChange: (f) => setState(() => _focused = f),
-              child: TextField(
-                controller: widget.controller,
-                style:
-                    TextStyle(fontSize: 15, color: C.text1(widget.dark)),
-                decoration: InputDecoration(
-                  hintText: 'Search athletes or events…',
-                  hintStyle: TextStyle(
-                      color: C.text3(widget.dark), fontSize: 15),
-                  border: InputBorder.none,
-                  isDense: true,
-                  contentPadding: EdgeInsets.zero,
+        children: ['All', 'M', 'F'].map((v) {
+          final active = gender == v;
+          return GestureDetector(
+            onTap: () => onChanged(v),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: active ? C.accent : Colors.transparent,
+                borderRadius: BorderRadius.circular(100),
+              ),
+              child: Text(
+                v,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: active ? Colors.white : C.text3(dark),
                 ),
               ),
             ),
-          ),
-          if (widget.controller.text.isNotEmpty)
-            GestureDetector(
-              onTap: widget.controller.clear,
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: Icon(Icons.close,
-                    size: 16, color: C.text3(widget.dark)),
-              ),
-            ),
-        ],
+          );
+        }).toList(),
       ),
     );
   }
@@ -540,7 +849,7 @@ class _TabBtn extends StatelessWidget {
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: active ? C.text1(dark) : C.text3(dark),
+              color: active ? C.text1(dark) : C.text2(dark),
             ),
             child: Text(label),
           ),
@@ -570,6 +879,7 @@ class _LeaderboardRow extends StatefulWidget {
   final double maxDelta;
   final Animation<double> heatAnim;
   final bool dark;
+  final List<double> sparkData;
   final VoidCallback onTap;
 
   const _LeaderboardRow({
@@ -579,6 +889,7 @@ class _LeaderboardRow extends StatefulWidget {
     required this.maxDelta,
     required this.heatAnim,
     required this.dark,
+    required this.sparkData,
     required this.onTap,
   });
 
@@ -597,6 +908,7 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
     final event = e['event'] ?? '';
     final delta = (e['improvement_delta_pct'] ?? 0.0) as num;
     final gender = e['profiles']?['gender'] ?? 'M';
+    final isField = _fieldEvents.contains(event);
 
     final parts = name.toString().split(' ');
     final initials = parts.length >= 2
@@ -605,7 +917,6 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
             ? name.toString()[0].toUpperCase()
             : '?';
 
-    // Top 3 get special treatment
     final isFirst = widget.index == 0;
     final isTop3 = widget.index < 3;
 
@@ -619,13 +930,13 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 120),
         color: _pressed ? C.accentSoft(dark) : Colors.transparent,
-        padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
         child: Row(
           children: [
-            // Rank circle
+            // Rank
             Container(
-              width: 32,
-              height: 32,
+              width: 30,
+              height: 30,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: isFirst
@@ -647,7 +958,7 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
               child: Text(
                 '${widget.index + 1}',
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight: FontWeight.w700,
                   color: isFirst
                       ? Colors.white
@@ -657,12 +968,12 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
                 ),
               ),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 12),
 
-            // Avatar with gender color hint
+            // Avatar
             Container(
-              width: 42,
-              height: 42,
+              width: 40,
+              height: 40,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: gender == 'F'
@@ -673,7 +984,7 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
               child: Text(
                 initials,
                 style: TextStyle(
-                  fontSize: 14,
+                  fontSize: 13,
                   fontWeight: FontWeight.w700,
                   color: gender == 'F'
                       ? const Color(0xFFD4537E)
@@ -681,9 +992,9 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
                 ),
               ),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 12),
 
-            // Info + heat bar
+            // Info
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -691,7 +1002,7 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
                   Text(
                     name,
                     style: TextStyle(
-                      fontSize: 15,
+                      fontSize: 14,
                       fontWeight: FontWeight.w600,
                       letterSpacing: -0.15,
                       color: C.text1(dark),
@@ -699,11 +1010,11 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 2),
                   Text(
                     event,
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: 11,
                       fontWeight: FontWeight.w500,
                       color: C.text3(dark),
                     ),
@@ -711,13 +1022,13 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
                   if (widget.tab == 'heat' &&
                       widget.maxDelta > 0 &&
                       delta > 0) ...[
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 6),
                     AnimatedBuilder(
                       animation: widget.heatAnim,
                       builder: (_, child) => ClipRRect(
                         borderRadius: BorderRadius.circular(3),
                         child: Container(
-                          height: 6,
+                          height: 4,
                           color: C.surface3(dark),
                           child: FractionallySizedBox(
                             alignment: Alignment.centerLeft,
@@ -740,13 +1051,33 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
                 ],
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
 
-            // Trailing
+            // Sparkline
+            if (widget.sparkData.length >= 2)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: SizedBox(
+                  width: 40,
+                  height: 24,
+                  child: CustomPaint(
+                    painter: _SparklinePainter(
+                      data: widget.sparkData,
+                      isField: isField,
+                      color: delta > 0
+                          ? C.accent.withValues(alpha: 0.7)
+                          : C.text3(dark),
+                    ),
+                  ),
+                ),
+              ),
+
+            // Trailing value
             if (widget.tab == 'heat')
               delta > 0
                   ? _DeltaBadge(delta: delta, dark: dark)
-                  : Text('—', style: TextStyle(color: C.text3(dark)))
+                  : Text('—',
+                      style: TextStyle(color: C.text3(dark)))
             else
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
@@ -754,7 +1085,7 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
                   Text(
                     e['best_display'] ?? '—',
                     style: const TextStyle(
-                      fontSize: 15,
+                      fontSize: 14,
                       fontWeight: FontWeight.w700,
                       color: C.accent,
                       letterSpacing: -0.5,
@@ -763,13 +1094,13 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
                   if (delta > 0)
                     Text(
                       '+${delta.toStringAsFixed(1)}%',
-                      style:
-                          TextStyle(fontSize: 11, color: C.text3(dark)),
+                      style: TextStyle(
+                          fontSize: 10, color: C.text3(dark)),
                     ),
                 ],
               ),
-            const SizedBox(width: 6),
-            Icon(Icons.chevron_right, size: 16, color: C.text3(dark)),
+            const SizedBox(width: 4),
+            Icon(Icons.chevron_right, size: 14, color: C.text3(dark)),
           ],
         ),
       ),
@@ -788,7 +1119,7 @@ class _DeltaBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: C.accentSoft(dark),
         borderRadius: BorderRadius.circular(100),
@@ -796,12 +1127,12 @@ class _DeltaBadge extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.arrow_upward, size: 10, color: C.accent),
-          const SizedBox(width: 3),
+          const Icon(Icons.arrow_upward, size: 9, color: C.accent),
+          const SizedBox(width: 2),
           Text(
             '${delta.toStringAsFixed(2)}%',
             style: const TextStyle(
-              fontSize: 12,
+              fontSize: 11,
               fontWeight: FontWeight.w600,
               color: C.accent,
             ),

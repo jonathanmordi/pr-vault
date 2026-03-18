@@ -77,7 +77,7 @@ class PRVaultApp extends StatelessWidget {
               backgroundColor: C.surface(true),
               foregroundColor: C.text1(true),
               elevation: 0,
-              surfaceTintColor: Colors.transparent,
+              surfaceTintColor: const Color.fromARGB(0, 255, 255, 255),
               titleTextStyle: TextStyle(
                 color: C.text1(true),
                 fontSize: 18,
