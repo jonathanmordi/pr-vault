@@ -75,9 +75,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
     // Build sparklines from meet_appearances
     final appearances = await supabase
         .from('meet_appearances')
-        .select('athlete_id, event, time_seconds, mark_meters, meet_date')
-        .not('meet_date', 'is', null)
-        .order('meet_date', ascending: true);
+        .select('athlete_id, event, time_seconds, mark_meters, meet_date');
 
     final Map<String, List<double>> sparklines = {};
     for (final a in List<Map<String, dynamic>>.from(appearances)) {
@@ -99,8 +97,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
       }
     }
     final grouped = best.values.toList()
-      ..sort((a, b) => (b['improvement_delta_pct'] as num)
-          .compareTo(a['improvement_delta_pct'] as num));
+  ..sort((a, b) => (b['improvement_delta_pct'] as num? ?? 0)
+      .compareTo(a['improvement_delta_pct'] as num? ?? 0));
 
     setState(() {
       _entries = data;
@@ -232,7 +230,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                         child: Icon(Icons.refresh,
                             size: 20, color: C.text2(dark)),
                       ),
-                    ),
+                    ), 
                     const SizedBox(width: 4),
                     Container(
                       width: 36,
@@ -516,7 +514,10 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
         // Insert podium at top
         if (showPodium && i == 0) {
           return _PodiumCard(
-            entries: list.take(3).toList(),
+            entries: list
+            .where((e) => (e['improvement_delta_pct'] as num? ?? 0) > 0.01)
+            .take(3)
+            .toList(),
             dark: dark,
             onTap: _openDetail,
           );
@@ -597,7 +598,7 @@ class _PodiumCard extends StatelessWidget {
                   final idx = e.key;
                   final entry = e.value;
                   final name =
-                      entry['profiles']?['full_name'] ?? 'Unknown';
+                      formatName(entry['profiles']?['full_name'] ?? 'Unknown');
                   final delta =
                       (entry['improvement_delta_pct'] ?? 0.0) as num;
                   final event = entry['event'] ?? '';
@@ -904,7 +905,7 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
   Widget build(BuildContext context) {
     final e = widget.entry;
     final dark = widget.dark;
-    final name = e['profiles']?['full_name'] ?? 'Unknown';
+    final name = formatName(e['profiles']?['full_name'] ?? 'Unknown');
     final event = e['event'] ?? '';
     final delta = (e['improvement_delta_pct'] ?? 0.0) as num;
     final gender = e['profiles']?['gender'] ?? 'M';
@@ -1182,7 +1183,7 @@ class _AthleteDetailSheetState extends State<_AthleteDetailSheet>
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final e = widget.entry;
-    final name = e['profiles']?['full_name'] ?? 'Unknown';
+    final name = formatName(e['profiles']?['full_name'] ?? 'Unknown');
     final event = e['event'] ?? '';
     final bestDisplay = e['best_display'] ?? '—';
     final delta = (e['improvement_delta_pct'] ?? 0.0) as num;

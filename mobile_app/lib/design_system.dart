@@ -230,3 +230,13 @@ class CustomToggle extends StatelessWidget {
     );
   }
 }
+
+String formatName(String raw) {
+  if (raw.contains(',')) {
+    final parts = raw.split(',');
+    if (parts.length >= 2) {
+      return '${parts[1].trim()} ${parts[0].trim()}';
+    }
+  }
+  return raw;
+}
