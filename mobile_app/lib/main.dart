@@ -7,6 +7,7 @@ import 'profile_screen.dart';
 import 'settings_screen.dart';
 
 Future<void> main() async {
+  // Ensure Supabase is ready before rendering any widgets.
   WidgetsFlutterBinding.ensureInitialized();
   await Supabase.initialize(
     url: AppConfig.supabaseUrl,
@@ -15,13 +16,16 @@ Future<void> main() async {
   runApp(const PRVaultApp());
 }
 
+/// Global Supabase client handle reused throughout the app.
 final supabase = Supabase.instance.client;
 
+/// Root widget that wires up the Material themes and auth gate.
 class PRVaultApp extends StatelessWidget {
   const PRVaultApp({super.key});
 
   @override
   Widget build(BuildContext context) {
+    // Listen for theme changes so toggling dark mode updates immediately.
     return ValueListenableBuilder<ThemeMode>(
       valueListenable: themeModeNotifier,
       builder: (context, mode, _) {
@@ -104,6 +108,7 @@ class PRVaultApp extends StatelessWidget {
   }
 }
 
+/// Waits for a signed-in session before showing the main shell.
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
 
@@ -122,6 +127,7 @@ class AuthGate extends StatelessWidget {
   }
 }
 
+/// Hosts the tabbed experience with the floating bottom nav.
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
 
@@ -132,6 +138,7 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
 
+  /// Each tab reuses these persistent screen instances.
   final List<Widget> _screens = const [
     LeaderboardScreen(),
     ProfileScreen(),
@@ -162,6 +169,7 @@ class _MainShellState extends State<MainShell> {
   }
 }
 
+/// Email/password auth plus optional invite code routing.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -177,6 +185,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isSignUp = false;
 
   Future<void> _submit() async {
+    // Single handler toggles between login and registration states.
     setState(() => _loading = true);
     try {
       if (_isSignUp) {
@@ -366,6 +375,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
+/// Collects the team invite code immediately after sign-up.
 class InviteCodeScreen extends StatefulWidget {
   final String userId;
   const InviteCodeScreen({super.key, required this.userId});
@@ -406,8 +416,7 @@ class _InviteCodeScreenState extends State<InviteCodeScreen> {
           .update({'team_id': result['id']})
           .eq('id', widget.userId);
 
-      // Sign in is already handled by AuthGate listening to auth state
-      // Just pop and let AuthGate redirect to MainShell
+      // AuthGate will notice the new session; simply unwind the stack.
       if (mounted) Navigator.of(context).popUntil((r) => r.isFirst);
 
     } catch (e) {
@@ -514,6 +523,7 @@ class _InviteCodeScreenState extends State<InviteCodeScreen> {
   }
 }
 
+/// Decorated input used on auth and invite screens for a consistent look.
 class _InputField extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
@@ -567,6 +577,7 @@ class _InputField extends StatelessWidget {
   }
 }
 
+/// Floating nav bar that mimics an iOS-style bottom navigation.
 class _FloatingNav extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
@@ -627,6 +638,7 @@ class _FloatingNav extends StatelessWidget {
   }
 }
 
+/// Icon + label button that updates the current tab when tapped.
 class _NavItem extends StatelessWidget {
   final IconData icon;
   final IconData activeIcon;

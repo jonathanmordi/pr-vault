@@ -8,14 +8,14 @@ final supabase = Supabase.instance.client;
 
 const _eventGroups = <String, List<String>?>{
   'All': null,
-  'Sprints': ['55', '60', '100', '200', '300', '400'],
-  'Mid': ['500', '600', '800', '1000', '1500', 'MILE', '3000', '5000'],
-  'Hurdles': ['55H', '60H', '110H', '400H', '300H', '100H'],
-  'Jumps': ['HJ', 'LJ', 'TJ', 'PV'],
-  'Throws': ['SP', 'DT', 'HT', 'JT'],
+  'Sprints': ['55 Meters', '60 Meters', '100 Meters', '200 Meters', '300 Meters', '400 Meters'],
+  'Mid': ['500 Meters', '600 Meters', '800 Meters', '1000 Meters', '1500 Meters', 'Mile', '3000 Meters', '5000 Meters', '10,000 Meters', '3000 Steeplechase'],
+  'Hurdles': ['55 Hurdles', '60 Hurdles', '110 Hurdles', '100 Hurdles', '400 Hurdles'],
+  'Jumps': ['High Jump', 'Long Jump', 'Triple Jump', 'Pole Vault'],
+  'Throws': ['Shot Put', 'Discus', 'Hammer', 'Javelin', 'Weight Throw'],
 };
 
-const _fieldEvents = ['HJ', 'LJ', 'TJ', 'PV', 'SP', 'DT', 'HT', 'JT'];
+const _fieldEvents = ['High Jump', 'Long Jump', 'Triple Jump', 'Pole Vault', 'Shot Put', 'Discus', 'Hammer', 'Javelin', 'Weight Throw'];
 
 class LeaderboardScreen extends StatefulWidget {
   const LeaderboardScreen({super.key});
@@ -80,10 +80,13 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
     final Map<String, List<double>> sparklines = {};
     for (final a in List<Map<String, dynamic>>.from(appearances)) {
       final id = a['athlete_id'] as String;
+      final event = a['event'] as String? ?? '';
       final val = (a['time_seconds'] as num?)?.toDouble() ??
           (a['mark_meters'] as num?)?.toDouble();
       if (val != null && val > 0) {
-        sparklines.putIfAbsent(id, () => []).add(val);
+        // Key by athlete_id + event so sparklines are per-event
+        final key = '${id}_$event';
+        sparklines.putIfAbsent(key, () => []).add(val);
       }
     }
 
@@ -462,7 +465,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                         color: sel ? C.accent : C.border(dark)),
                   ),
                   child: Text(
-                    ev,
+                    ev.replaceAll(' Meters', '').replaceAll(' Hurdles', 'H'),
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -531,7 +534,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
         final delay = _initialLoad
             ? Duration(milliseconds: 200 + actualIndex * 40)
             : Duration.zero;
-        final sparkData = _sparklines[id] ?? [];
+        final event = entry['event'] ?? '';
+        final sparkData = _sparklines['${id}_$event'] ?? [];
 
         return FadeSlideIn(
           key: ValueKey('lb-$id-${entry['event']}'),
