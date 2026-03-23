@@ -139,28 +139,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final tfrrsId = tfrrsProfile['tfrrs_athlete_id'] as String?;
 
     try {
-      // Update all track_prs to point to auth user's ID
+      // Step 1: Copy TFRRS ID to auth user's profile FIRST
+      await supabase.from('profiles').update({
+        'tfrrs_athlete_id': tfrrsId,
+      }).eq('id', uid);
+
+      // Step 2: Move all PRs to auth user's ID
       await supabase
           .from('track_prs')
           .update({'athlete_id': uid})
           .eq('athlete_id', oldId);
 
-      // Update all meet_appearances to point to auth user's ID
+      // Step 3: Move all meet appearances to auth user's ID
       await supabase
           .from('meet_appearances')
           .update({'athlete_id': uid})
           .eq('athlete_id', oldId);
 
-      // Update the auth user's profile with TFRRS info
-      await supabase.from('profiles').update({
-        'tfrrs_athlete_id': tfrrsId,
-        'full_name': tfrrsProfile['full_name'],
-      }).eq('id', uid);
+      // Step 4: Verify PRs actually moved before deleting old profile
+      final check = await supabase
+          .from('track_prs')
+          .select('id')
+          .eq('athlete_id', uid)
+          .limit(1);
 
-      // Delete the old scraper-created profile
-      await supabase.from('profiles').delete().eq('id', oldId);
+      if ((check as List).isNotEmpty) {
+        // Data confirmed on new ID — safe to delete old profile
+        await supabase.from('profiles').delete().eq('id', oldId);
+      }
 
-      // Reload everything
+      // Step 5: Reload
       await _load();
     } catch (e) {
       setState(() => _linking = false);
@@ -174,8 +182,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
     }
   }
-
-  String _initials(String name) {
+  
+String _initials(String name) {
     final formatted = formatName(name);
     final parts = formatted.split(' ');
     if (parts.length >= 2) {
@@ -772,13 +780,10 @@ class _PRRow extends StatelessWidget {
               borderRadius: BorderRadius.circular(10),
             ),
             alignment: Alignment.center,
-            child: Text(
-              pr['event'] ?? '',
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                color: C.text2(dark),
-              ),
+            child: Icon(
+              Icons.emoji_events_outlined,
+              size: 18,
+              color: C.text2(dark),
             ),
           ),
           const SizedBox(width: 12),
