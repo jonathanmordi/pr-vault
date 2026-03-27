@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'design_system.dart';
+import 'athlete_profile_screen.dart';
 
 final supabase = Supabase.instance.client;
 
@@ -1357,6 +1358,38 @@ class _AthleteDetailSheetState extends State<_AthleteDetailSheet>
                           ),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 20),
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => AthleteProfileScreen(
+                              athleteId: e['athlete_id'] ?? '',
+                              athleteName: e['profiles']?['full_name'] ?? 'Unknown',
+                              gender: e['profiles']?['gender'] ?? 'M',
+                            ),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        decoration: BoxDecoration(
+                          color: C.accent,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        alignment: Alignment.center,
+                        child: const Text(
+                          'View Full Profile',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 ),
