@@ -7,6 +7,7 @@ final _supabase = Supabase.instance.client;
 const _fieldEvents = [
   'High Jump', 'Long Jump', 'Triple Jump', 'Pole Vault',
   'Shot Put', 'Discus', 'Hammer', 'Javelin', 'Weight Throw',
+  'Decathlon', 'Heptathlon', 'Pentathlon',
 ];
 
 class AthleteProfileScreen extends StatefulWidget {
@@ -30,6 +31,7 @@ class AthleteProfileScreen extends StatefulWidget {
 class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
   List<Map<String, dynamic>> _prs = [];
   List<Map<String, dynamic>> _appearances = [];
+  List<Map<String, dynamic>> _records = [];
   bool _loading = true;
   String? _selectedEvent;
 
@@ -52,9 +54,15 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
         .eq('athlete_id', widget.athleteId)
         .order('meet_date', ascending: true);
 
+    final records = await _supabase
+      .from('school_records')
+      .select()
+      .eq('gender', widget.gender);
+
     setState(() {
       _prs = List<Map<String, dynamic>>.from(prs);
       _appearances = List<Map<String, dynamic>>.from(appearances);
+      _records = List<Map<String, dynamic>>.from(records);
       _loading = false;
       if (_prs.isNotEmpty) {
         _selectedEvent = _prs.first['event'];
@@ -99,6 +107,72 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
     }
     return points;
   }
+
+  Map<String, dynamic>? _getRecordForPR(Map<String, dynamic> pr) {
+      final event = pr['event'] as String? ?? '';
+      final setOn = pr['set_on'] as String? ?? '';
+      
+      // Determine season from meet date
+      String season = 'indoor'; // default
+      if (setOn.isNotEmpty) {
+        try {
+          final month = int.parse(setOn.split('-')[1]);
+          season = (month >= 3 && month <= 8) ? 'outdoor' : 'indoor';
+        } catch (_) {}
+      }
+      
+      // Find matching record for event + season
+      final match = _records.where((r) => 
+        r['event'] == event && r['season'] == season
+      ).toList();
+      
+      if (match.isNotEmpty) return match.first;
+      
+      // Fallback: try the other season
+      final fallback = _records.where((r) => r['event'] == event).toList();
+      return fallback.isNotEmpty ? fallback.first : null;
+    }
+
+    String _recordGapText(Map<String, dynamic> pr, Map<String, dynamic> record) {
+      final isField = _fieldEvents.contains(pr['event']);
+      
+      if (isField) {
+        final prMark = (pr['best_mark_meters'] as num?)?.toDouble() ?? 0;
+        final recMark = (record['record_mark_meters'] as num?)?.toDouble() ?? 0;
+        if (prMark <= 0 || recMark <= 0) return '';
+        final gap = recMark - prMark;
+        if (gap <= 0) return '🏆 NEW SCHOOL RECORD';
+        return '${gap.toStringAsFixed(2)}m from record (${record['record_display']}, ${record['holder_name']} \'${(record['year_set'] ?? 0) % 100})';
+      } else {
+        final prTime = (pr['best_time_seconds'] as num?)?.toDouble() ?? 0;
+        final recTime = (record['record_mark_seconds'] as num?)?.toDouble() ?? 9999;
+        if (prTime <= 0 || recTime >= 9999) return '';
+        final gap = prTime - recTime;
+        if (gap <= 0) return '🏆 NEW SCHOOL RECORD';
+        // Format gap as time
+        if (gap >= 60) {
+          final m = gap ~/ 60;
+          final s = (gap % 60).toStringAsFixed(2);
+          return '${m}:${s.padLeft(5, '0')} off record (${record['record_display']}, ${record['holder_name']} \'${(record['year_set'] ?? 0) % 100})';
+        }
+        return '${gap.toStringAsFixed(2)}s off record (${record['record_display']}, ${record['holder_name']} \'${(record['year_set'] ?? 0) % 100})';
+      }
+    }
+
+    double _recordPercentage(Map<String, dynamic> pr, Map<String, dynamic> record) {
+      final isField = _fieldEvents.contains(pr['event']);
+      if (isField) {
+        final prMark = (pr['best_mark_meters'] as num?)?.toDouble() ?? 0;
+        final recMark = (record['record_mark_meters'] as num?)?.toDouble() ?? 1;
+        if (recMark <= 0) return 0;
+        return (prMark / recMark).clamp(0.0, 1.0);
+      } else {
+        final prTime = (pr['best_time_seconds'] as num?)?.toDouble() ?? 9999;
+        final recTime = (record['record_mark_seconds'] as num?)?.toDouble() ?? 1;
+        if (recTime <= 0) return 0;
+        return (recTime / prTime).clamp(0.0, 1.0);
+      }
+    }
 
   @override
   Widget build(BuildContext context) {
@@ -351,7 +425,10 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                                     final pr = entry.value;
                                     final isLast = i == _prs.length - 1;
                                     final delta = (pr['improvement_delta_pct'] as num? ?? 0.0);
-                                    return _PRRow(pr: pr, isLast: isLast, delta: delta, dark: dark);
+                                    final record = _getRecordForPR(pr);
+                                    final gapText = record != null ? _recordGapText(pr, record) : null;
+                                    final pct = record != null ? _recordPercentage(pr, record) : null;
+                                    return _PRRow(pr: pr, isLast: isLast, delta: delta, dark: dark, recordGapText: gapText, recordPct: pct);
                                   }).toList(),
                                 ),
                               ),
@@ -927,43 +1004,86 @@ class _PRRow extends StatelessWidget {
   final bool isLast;
   final num delta;
   final bool dark;
+  final String? recordGapText;
+  final double? recordPct;
 
-  const _PRRow({required this.pr, required this.isLast, required this.delta, required this.dark});
+  const _PRRow({required this.pr, required this.isLast, required this.delta, required this.dark, this.recordGapText, this.recordPct});
 
   @override
   Widget build(BuildContext context) {
+    final isNewRecord = recordGapText != null && recordGapText!.contains('NEW SCHOOL RECORD');
+    
     return Container(
       padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
       decoration: isLast
           ? null
           : BoxDecoration(border: Border(bottom: BorderSide(color: C.border(dark), width: 0.5))),
-      child: Row(
+      child: Column(
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(color: C.surface2(dark), borderRadius: BorderRadius.circular(10)),
-            alignment: Alignment.center,
-            child: Icon(Icons.emoji_events_outlined, size: 18, color: C.text2(dark)),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(pr['event'] ?? '', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: C.text1(dark))),
-                Text(pr['set_at_meet'] ?? 'Season best', style: TextStyle(fontSize: 11, color: C.text3(dark))),
-              ],
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
+          Row(
             children: [
-              Text(pr['best_display'] ?? '—', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: C.accent, letterSpacing: -0.5)),
-              if (delta > 0)
-                Text('+${delta.toStringAsFixed(1)}%', style: TextStyle(fontSize: 11, color: C.text3(dark))),
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(color: C.surface2(dark), borderRadius: BorderRadius.circular(10)),
+                alignment: Alignment.center,
+                child: Icon(Icons.emoji_events_outlined, size: 18, color: C.text2(dark)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(pr['event'] ?? '', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: C.text1(dark))),
+                    Text(pr['set_at_meet'] ?? 'Season best', style: TextStyle(fontSize: 11, color: C.text3(dark))),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(pr['best_display'] ?? '—', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: C.accent, letterSpacing: -0.5)),
+                  if (delta > 0)
+                    Text('+${delta.toStringAsFixed(1)}%', style: TextStyle(fontSize: 11, color: C.text3(dark))),
+                ],
+              ),
             ],
           ),
+          // School record comparison
+          if (recordGapText != null && recordGapText!.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Padding(
+              padding: EdgeInsets.only(left: isNewRecord ? 0 : 52),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (recordPct != null && !isNewRecord)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(2),
+                      child: SizedBox(
+                        height: 3,
+                        child: LinearProgressIndicator(
+                          value: recordPct!,
+                          backgroundColor: C.surface3(dark),
+                          valueColor: AlwaysStoppedAnimation(
+                            recordPct! > 0.95 ? C.accent : C.text3(dark),
+                          ),
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 4),
+                  Text(
+                    recordGapText!,
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: isNewRecord ? C.accent : C.text3(dark),
+                      fontWeight: isNewRecord ? FontWeight.w700 : FontWeight.w400,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );

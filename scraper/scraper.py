@@ -1,5 +1,6 @@
 import os
 import re
+import uuid
 from datetime import datetime
 from dotenv import load_dotenv
 from supabase import create_client
@@ -12,9 +13,9 @@ supabase = create_client(
     os.getenv("SUPABASE_KEY")
 )
 
+
 def parse_meet_date(raw: str) -> str | None:
     """Parse TFRRS date strings into 'YYYY-MM-DD'.
-
     Handles all observed formats:
       'Apr 18, 2025'              → '2025-04-18'
       'Feb 27-28, 2026'           → '2026-02-28'   (last day)
@@ -36,7 +37,6 @@ def parse_meet_date(raw: str) -> str | None:
     if m:
         end_month, end_day, year = m.group(2), m.group(3), m.group(4)
         try:
-            # Try abbreviated month first, then full
             for fmt in ("%b %d, %Y", "%B %d, %Y"):
                 try:
                     return datetime.strptime(f"{end_month} {end_day}, {year}", fmt).strftime("%Y-%m-%d")
@@ -78,6 +78,7 @@ def parse_time_to_seconds(raw: str) -> float | None:
     except:
         return None
 
+
 def parse_mark_to_meters(raw: str) -> float | None:
     """Converts '6.45m' or '6.45' to float meters. Returns None if unparseable."""
     raw = raw.strip().split()[0]
@@ -86,12 +87,14 @@ def parse_mark_to_meters(raw: str) -> float | None:
     except:
         return None
 
+
 def is_field_event(event: str) -> bool:
     field_events = [
         'hj', 'lj', 'tj', 'pv',
         'sp', 'dt', 'ht', 'jt',
         'jump', 'throw', 'put', 'vault',
-        'discus', 'hammer', 'javelin', 'shot', 'triple', 'high', 'long', 'pole'
+        'discus', 'hammer', 'javelin', 'shot', 'triple', 'high', 'long', 'pole',
+        'decathlon', 'heptathlon', 'pentathlon',
     ]
     return any(k in event.lower() for k in field_events)
 
@@ -106,9 +109,11 @@ def clean_mark(raw: str) -> str | None:
     """Extract just the mark/time from td[0], skipping DNS/DNF/FS and wind readings."""
     raw = raw.strip()
     first_line = raw.split('\n')[0].strip()
+
     # Skip non-results
     if any(x in first_line.upper() for x in ['DNS', 'DNF', 'FS', 'FOUL', 'NH', 'DQ', 'SCR']):
         return None
+
     # Take just the numeric part (strip wind reading in parens)
     mark = first_line.split('(')[0].strip()
     mark = mark.split()[0].strip()
@@ -117,7 +122,45 @@ def clean_mark(raw: str) -> str | None:
     return mark
 
 
-def upsert_pr_if_faster(athlete_id, team_id, event, new_seconds, new_meters, display, meet_name, meet_date):
+def check_and_update_school_record(team_id, gender, event, new_seconds, new_meters, display, holder_name, meet_date):
+    """If the new mark beats the school record, update it."""
+    try:
+        result = supabase.table("school_records") \
+            .select("id, record_mark_seconds, record_mark_meters") \
+            .eq("team_id", team_id) \
+            .eq("event", event) \
+            .eq("gender", gender) \
+            .maybe_single() \
+            .execute()
+        existing = result.data if result else None
+    except Exception:
+        return
+
+    if existing is None:
+        return  # no school record on file for this event — skip
+
+    is_field = new_meters is not None
+
+    if is_field:
+        existing_mark = existing.get("record_mark_meters") or 0
+        is_new_record = new_meters > existing_mark
+    else:
+        existing_time = existing.get("record_mark_seconds") or 9999
+        is_new_record = new_seconds < existing_time
+
+    if is_new_record:
+        year = int(meet_date[:4]) if meet_date and len(meet_date) >= 4 else None
+        supabase.table("school_records").update({
+            "record_mark_seconds": new_seconds,
+            "record_mark_meters": new_meters,
+            "record_display": display,
+            "holder_name": holder_name,
+            "year_set": year,
+        }).eq("id", existing["id"]).execute()
+        print(f"  🏆 SCHOOL RECORD BROKEN: {event} {display} (was {existing.get('record_mark_seconds') or existing.get('record_mark_meters')})")
+
+
+def upsert_pr_if_faster(athlete_id, team_id, event, new_seconds, new_meters, display, meet_name, meet_date, gender, holder_name):
     """Writes to meet_appearances always. Updates track_prs only if better."""
 
     # Always log the appearance
@@ -148,6 +191,7 @@ def upsert_pr_if_faster(athlete_id, team_id, event, new_seconds, new_meters, dis
     is_field = new_meters is not None
 
     if existing is None:
+        # Brand new PR
         supabase.table("track_prs").insert({
             "athlete_id": athlete_id,
             "team_id": team_id,
@@ -162,6 +206,11 @@ def upsert_pr_if_faster(athlete_id, team_id, event, new_seconds, new_meters, dis
         }).execute()
         print(f"  NEW PR inserted: {event} {display}")
 
+        # Check if this also breaks the school record
+        check_and_update_school_record(
+            team_id, gender, event, new_seconds, new_meters,
+            display, holder_name, meet_date
+        )
     else:
         if is_field:
             existing_mark = existing.get("best_mark_meters") or 0
@@ -190,11 +239,17 @@ def upsert_pr_if_faster(athlete_id, team_id, event, new_seconds, new_meters, dis
                 "updated_at": "now()"
             }).eq("id", existing["id"]).execute()
             print(f"  PR UPDATED: {event} {display} (improved {round(delta, 2)}%)")
+
+            # Check if this also breaks the school record
+            check_and_update_school_record(
+                team_id, gender, event, new_seconds, new_meters,
+                display, holder_name, meet_date
+            )
         else:
             print(f"  No PR: {event} {display} — not better than existing")
 
 
-def scrape_athlete(page, tfrrs_athlete_id, athlete_id, team_id):
+def scrape_athlete(page, tfrrs_athlete_id, athlete_id, team_id, gender, athlete_name):
     """Scrapes all meet appearances from an athlete's TFRRS event history."""
     url = f"https://www.tfrrs.org/athletes/{tfrrs_athlete_id}"
     print(f"\nScraping {url}")
@@ -212,11 +267,11 @@ def scrape_athlete(page, tfrrs_athlete_id, athlete_id, team_id):
 
     # Collect all results first, then sort chronologically
     all_results = []
-
     for table in tables:
         thead = table.query_selector("thead")
         if not thead:
             continue
+
         event = clean_event_name(thead.inner_text())
         if not event:
             continue
@@ -271,6 +326,8 @@ def scrape_athlete(page, tfrrs_athlete_id, athlete_id, team_id):
             display=r["display"],
             meet_name=r["meet_name"],
             meet_date=r["meet_date"],
+            gender=gender,
+            holder_name=athlete_name,
         )
 
     print(f"  Total appearances logged: {len(all_results)}")
@@ -279,19 +336,19 @@ def scrape_athlete(page, tfrrs_athlete_id, athlete_id, team_id):
 def scrape_team_roster(page, team_url, team_id):
     """Scrapes all athlete IDs from a TFRRS team page."""
     print(f"\nFetching roster from {team_url}")
-
     page.goto(team_url, wait_until="domcontentloaded")
     page.wait_for_timeout(3000)
 
     links = page.query_selector_all("a[href*='/athletes/']")
-
     seen = set()
     athletes = []
+
     for link in links:
         href = link.get_attribute("href")
         name = link.inner_text().strip()
         if not href or not name:
             continue
+
         parts = href.split('/')
         try:
             idx = parts.index('athletes')
@@ -344,7 +401,6 @@ def run_scraper():
                     athlete_id = existing.data["id"]
                     print(f"\nExisting athlete: {athlete['name']}")
                 else:
-                    import uuid
                     new_id = str(uuid.uuid4())
                     supabase.table("profiles").insert({
                         "id": new_id,
@@ -361,11 +417,15 @@ def run_scraper():
                     page=page,
                     tfrrs_athlete_id=athlete["tfrrs_id"],
                     athlete_id=athlete_id,
-                    team_id=team_id
+                    team_id=team_id,
+                    gender=gender,
+                    athlete_name=athlete["name"],
                 )
+
                 page.wait_for_timeout(3000)
 
         browser.close()
+
     print("\nScrape complete.")
 
 

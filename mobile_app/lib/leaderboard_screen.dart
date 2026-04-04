@@ -16,7 +16,11 @@ const _eventGroups = <String, List<String>?>{
   'Throws': ['Shot Put', 'Discus', 'Hammer', 'Javelin', 'Weight Throw'],
 };
 
-const _fieldEvents = ['High Jump', 'Long Jump', 'Triple Jump', 'Pole Vault', 'Shot Put', 'Discus', 'Hammer', 'Javelin', 'Weight Throw'];
+const _fieldEvents = [
+  'High Jump', 'Long Jump', 'Triple Jump', 'Pole Vault',
+  'Shot Put', 'Discus', 'Hammer', 'Javelin', 'Weight Throw',
+  'Decathlon', 'Heptathlon', 'Pentathlon',
+];
 
 class LeaderboardScreen extends StatefulWidget {
   const LeaderboardScreen({super.key});
