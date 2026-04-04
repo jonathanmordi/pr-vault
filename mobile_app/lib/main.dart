@@ -5,6 +5,7 @@ import 'design_system.dart';
 import 'leaderboard_screen.dart';
 import 'profile_screen.dart';
 import 'settings_screen.dart';
+import 'maxes_screen.dart';
 
 Future<void> main() async {
   // Ensure Supabase is ready before rendering any widgets.
@@ -142,6 +143,7 @@ class _MainShellState extends State<MainShell> {
   final List<Widget> _screens = const [
     LeaderboardScreen(),
     ProfileScreen(),
+    MaxesScreen(),
     SettingsScreen(),
   ];
 
@@ -625,11 +627,19 @@ class _FloatingNav extends StatelessWidget {
             dark: dark,
           ),
           _NavItem(
+            icon: Icons.fitness_center_outlined,
+            activeIcon: Icons.fitness_center,
+            label: 'Maxes',
+            active: currentIndex == 2,
+            onTap: () => onTap(2),
+            dark: dark,
+          ),
+          _NavItem(
             icon: Icons.settings_outlined,
             activeIcon: Icons.settings,
             label: 'Settings',
-            active: currentIndex == 2,
-            onTap: () => onTap(2),
+            active: currentIndex == 3,
+            onTap: () => onTap(3),
             dark: dark,
           ),
         ],
