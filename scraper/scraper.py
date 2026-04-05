@@ -164,17 +164,20 @@ def upsert_pr_if_faster(athlete_id, team_id, event, new_seconds, new_meters, dis
     """Writes to meet_appearances always. Updates track_prs only if better."""
 
     # Always log the appearance
-    supabase.table("meet_appearances").insert({
-        "athlete_id": athlete_id,
-        "team_id": team_id,
-        "event": event,
-        "time_seconds": new_seconds,
-        "mark_meters": new_meters,
-        "display_value": display,
-        "meet_name": meet_name,
-        "meet_date": meet_date,
-        "was_pr": False
-    }).execute()
+    supabase.table("meet_appearances").upsert(
+        {
+            "athlete_id": athlete_id,
+            "team_id": team_id,
+            "event": event,
+            "time_seconds": new_seconds,
+            "mark_meters": new_meters,
+            "display_value": display,
+            "meet_name": meet_name,
+            "meet_date": meet_date,
+            "was_pr": False
+        },
+        on_conflict="athlete_id,event,meet_name,meet_date,display_value"
+    ).execute()
 
     # Check for existing PR
     try:
