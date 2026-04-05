@@ -32,6 +32,7 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
   List<Map<String, dynamic>> _prs = [];
   List<Map<String, dynamic>> _appearances = [];
   List<Map<String, dynamic>> _records = [];
+  List<Map<String, dynamic>> _maxes = [];
   bool _loading = true;
   String? _selectedEvent;
 
@@ -55,14 +56,21 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
         .order('meet_date', ascending: true);
 
     final records = await _supabase
-      .from('school_records')
-      .select()
-      .eq('gender', widget.gender);
+        .from('school_records')
+        .select()
+        .eq('gender', widget.gender);
+
+    final maxes = await _supabase
+        .from('lifting_maxes')
+        .select('lift_type, weight_lbs')
+        .eq('athlete_id', widget.athleteId)
+        .order('lift_type');
 
     setState(() {
       _prs = List<Map<String, dynamic>>.from(prs);
       _appearances = List<Map<String, dynamic>>.from(appearances);
       _records = List<Map<String, dynamic>>.from(records);
+      _maxes = List<Map<String, dynamic>>.from(maxes);
       _loading = false;
       if (_prs.isNotEmpty) {
         _selectedEvent = _prs.first['event'];
@@ -109,70 +117,65 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
   }
 
   Map<String, dynamic>? _getRecordForPR(Map<String, dynamic> pr) {
-      final event = pr['event'] as String? ?? '';
-      final setOn = pr['set_on'] as String? ?? '';
-      
-      // Determine season from meet date
-      String season = 'indoor'; // default
-      if (setOn.isNotEmpty) {
-        try {
-          final month = int.parse(setOn.split('-')[1]);
-          season = (month >= 3 && month <= 8) ? 'outdoor' : 'indoor';
-        } catch (_) {}
-      }
-      
-      // Find matching record for event + season
-      final match = _records.where((r) => 
-        r['event'] == event && r['season'] == season
-      ).toList();
-      
-      if (match.isNotEmpty) return match.first;
-      
-      // Fallback: try the other season
-      final fallback = _records.where((r) => r['event'] == event).toList();
-      return fallback.isNotEmpty ? fallback.first : null;
+    final event = pr['event'] as String? ?? '';
+    final setOn = pr['set_on'] as String? ?? '';
+
+    String season = 'indoor';
+    if (setOn.isNotEmpty) {
+      try {
+        final month = int.parse(setOn.split('-')[1]);
+        season = (month >= 3 && month <= 8) ? 'outdoor' : 'indoor';
+      } catch (_) {}
     }
 
-    String _recordGapText(Map<String, dynamic> pr, Map<String, dynamic> record) {
-      final isField = _fieldEvents.contains(pr['event']);
-      
-      if (isField) {
-        final prMark = (pr['best_mark_meters'] as num?)?.toDouble() ?? 0;
-        final recMark = (record['record_mark_meters'] as num?)?.toDouble() ?? 0;
-        if (prMark <= 0 || recMark <= 0) return '';
-        final gap = recMark - prMark;
-        if (gap <= 0) return '🏆 NEW SCHOOL RECORD';
-        return '${gap.toStringAsFixed(2)}m from record (${record['record_display']}, ${record['holder_name']} \'${(record['year_set'] ?? 0) % 100})';
-      } else {
-        final prTime = (pr['best_time_seconds'] as num?)?.toDouble() ?? 0;
-        final recTime = (record['record_mark_seconds'] as num?)?.toDouble() ?? 9999;
-        if (prTime <= 0 || recTime >= 9999) return '';
-        final gap = prTime - recTime;
-        if (gap <= 0) return '🏆 NEW SCHOOL RECORD';
-        // Format gap as time
-        if (gap >= 60) {
-          final m = gap ~/ 60;
-          final s = (gap % 60).toStringAsFixed(2);
-          return '${m}:${s.padLeft(5, '0')} off record (${record['record_display']}, ${record['holder_name']} \'${(record['year_set'] ?? 0) % 100})';
-        }
-        return '${gap.toStringAsFixed(2)}s off record (${record['record_display']}, ${record['holder_name']} \'${(record['year_set'] ?? 0) % 100})';
-      }
-    }
+    final match = _records.where((r) =>
+        r['event'] == event && r['season'] == season).toList();
 
-    double _recordPercentage(Map<String, dynamic> pr, Map<String, dynamic> record) {
-      final isField = _fieldEvents.contains(pr['event']);
-      if (isField) {
-        final prMark = (pr['best_mark_meters'] as num?)?.toDouble() ?? 0;
-        final recMark = (record['record_mark_meters'] as num?)?.toDouble() ?? 1;
-        if (recMark <= 0) return 0;
-        return (prMark / recMark).clamp(0.0, 1.0);
-      } else {
-        final prTime = (pr['best_time_seconds'] as num?)?.toDouble() ?? 9999;
-        final recTime = (record['record_mark_seconds'] as num?)?.toDouble() ?? 1;
-        if (recTime <= 0) return 0;
-        return (recTime / prTime).clamp(0.0, 1.0);
+    if (match.isNotEmpty) return match.first;
+
+    final fallback = _records.where((r) => r['event'] == event).toList();
+    return fallback.isNotEmpty ? fallback.first : null;
+  }
+
+  String _recordGapText(Map<String, dynamic> pr, Map<String, dynamic> record) {
+    final isField = _fieldEvents.contains(pr['event']);
+
+    if (isField) {
+      final prMark = (pr['best_mark_meters'] as num?)?.toDouble() ?? 0;
+      final recMark = (record['record_mark_meters'] as num?)?.toDouble() ?? 0;
+      if (prMark <= 0 || recMark <= 0) return '';
+      final gap = recMark - prMark;
+      if (gap <= 0) return '🏆 NEW SCHOOL RECORD';
+      return '${gap.toStringAsFixed(2)}m from record (${record['record_display']}, ${record['holder_name']} \'${(record['year_set'] ?? 0) % 100})';
+    } else {
+      final prTime = (pr['best_time_seconds'] as num?)?.toDouble() ?? 0;
+      final recTime = (record['record_mark_seconds'] as num?)?.toDouble() ?? 9999;
+      if (prTime <= 0 || recTime >= 9999) return '';
+      final gap = prTime - recTime;
+      if (gap <= 0) return '🏆 NEW SCHOOL RECORD';
+      if (gap >= 60) {
+        final m = gap ~/ 60;
+        final s = (gap % 60).toStringAsFixed(2);
+        return '${m}:${s.padLeft(5, '0')} off record (${record['record_display']}, ${record['holder_name']} \'${(record['year_set'] ?? 0) % 100})';
       }
+      return '${gap.toStringAsFixed(2)}s off record (${record['record_display']}, ${record['holder_name']} \'${(record['year_set'] ?? 0) % 100})';
     }
+  }
+
+  double _recordPercentage(Map<String, dynamic> pr, Map<String, dynamic> record) {
+    final isField = _fieldEvents.contains(pr['event']);
+    if (isField) {
+      final prMark = (pr['best_mark_meters'] as num?)?.toDouble() ?? 0;
+      final recMark = (record['record_mark_meters'] as num?)?.toDouble() ?? 1;
+      if (recMark <= 0) return 0;
+      return (prMark / recMark).clamp(0.0, 1.0);
+    } else {
+      final prTime = (pr['best_time_seconds'] as num?)?.toDouble() ?? 9999;
+      final recTime = (record['record_mark_seconds'] as num?)?.toDouble() ?? 1;
+      if (recTime <= 0) return 0;
+      return (recTime / prTime).clamp(0.0, 1.0);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -437,6 +440,72 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                         ),
                         const SizedBox(height: 28),
 
+                        // Lifting Maxes
+                        if (_maxes.isNotEmpty) ...[
+                          FadeSlideIn(
+                            delay: const Duration(milliseconds: 210),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'LIFTING MAXES',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: C.text3(dark),
+                                    letterSpacing: 0.06 * 13,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                GlassCard(
+                                  forceDark: dark,
+                                  child: Column(
+                                    children: _maxes.asMap().entries.map((entry) {
+                                      final i = entry.key;
+                                      final max = entry.value;
+                                      final isLast = i == _maxes.length - 1;
+                                      return Container(
+                                        padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+                                        decoration: isLast
+                                            ? null
+                                            : BoxDecoration(
+                                                border: Border(bottom: BorderSide(color: C.border(dark), width: 0.5)),
+                                              ),
+                                        child: Row(
+                                          children: [
+                                            Container(
+                                              width: 40,
+                                              height: 40,
+                                              decoration: BoxDecoration(
+                                                color: C.surface2(dark),
+                                                borderRadius: BorderRadius.circular(10),
+                                              ),
+                                              alignment: Alignment.center,
+                                              child: Icon(Icons.fitness_center, size: 18, color: C.text2(dark)),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: Text(
+                                                max['lift_type'] ?? '',
+                                                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: C.text1(dark)),
+                                              ),
+                                            ),
+                                            Text(
+                                              '${max['weight_lbs']} lbs',
+                                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: C.accent, letterSpacing: -0.5),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }).toList(),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 28),
+                        ],
+
                         // Meet history
                         FadeSlideIn(
                           delay: const Duration(milliseconds: 240),
@@ -652,7 +721,6 @@ class _InteractiveTrendChartState extends State<InteractiveTrendChart> {
           ],
         ),
         const SizedBox(height: 20),
-
         SizedBox(
           height: 210,
           child: LayoutBuilder(
@@ -710,7 +778,6 @@ class _InteractiveTrendChartState extends State<InteractiveTrendChart> {
           ),
         ),
         const SizedBox(height: 4),
-
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -797,7 +864,6 @@ class _InteractiveTrendChartState extends State<InteractiveTrendChart> {
               ],
             ),
           ),
-          // Tail — flush with bottom of card
           SizedBox(
             width: tooltipW,
             height: tailH,
@@ -841,7 +907,7 @@ class _InteractiveTrendChartState extends State<InteractiveTrendChart> {
   }
 }
 
-// ─── Tail painter — triangle flush with card bottom ─────────────────────────
+// ─── Tail painter ───────────────────────────────────────────────────────────
 
 class _TailPainter extends CustomPainter {
   final double tailLeft;
@@ -857,10 +923,8 @@ class _TailPainter extends CustomPainter {
       ..lineTo(tailLeft + 6, size.height)
       ..lineTo(tailLeft + 12, 0);
 
-    // Fill the triangle
     canvas.drawPath(path, Paint()..color = fillColor);
 
-    // Draw border on left and right edges
     final borderPaint = Paint()
       ..color = borderColor
       ..strokeWidth = 0.5
@@ -868,7 +932,6 @@ class _TailPainter extends CustomPainter {
     canvas.drawLine(Offset(tailLeft, 0), Offset(tailLeft + 6, size.height), borderPaint);
     canvas.drawLine(Offset(tailLeft + 6, size.height), Offset(tailLeft + 12, 0), borderPaint);
 
-    // Paint over the card's bottom border where the tail connects
     canvas.drawLine(
       Offset(tailLeft + 0.5, 0),
       Offset(tailLeft + 11.5, 0),
@@ -903,7 +966,6 @@ class _TrendLinePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (positions.length < 2) return;
 
-    // PR dashed line
     final prIdx = values.indexOf(prValue);
     if (prIdx >= 0) {
       final prY = positions[prIdx].dy;
@@ -919,7 +981,6 @@ class _TrendLinePainter extends CustomPainter {
       }
     }
 
-    // Gradient fill
     final fp = Path();
     for (var i = 0; i < positions.length; i++) {
       if (i == 0) {
@@ -941,7 +1002,6 @@ class _TrendLinePainter extends CustomPainter {
         ).createShader(Rect.fromLTWH(0, 0, size.width, size.height)),
     );
 
-    // Line
     final lp = Path();
     for (var i = 0; i < positions.length; i++) {
       if (i == 0) {
@@ -960,7 +1020,6 @@ class _TrendLinePainter extends CustomPainter {
         ..style = PaintingStyle.stroke,
     );
 
-    // Dots
     for (var i = 0; i < positions.length; i++) {
       final isPR = values[i] == prValue;
       final isActive = i == activeIndex;
@@ -1012,7 +1071,7 @@ class _PRRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isNewRecord = recordGapText != null && recordGapText!.contains('NEW SCHOOL RECORD');
-    
+
     return Container(
       padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
       decoration: isLast
@@ -1049,7 +1108,6 @@ class _PRRow extends StatelessWidget {
               ),
             ],
           ),
-          // School record comparison
           if (recordGapText != null && recordGapText!.isNotEmpty) ...[
             const SizedBox(height: 8),
             Padding(
@@ -1072,14 +1130,17 @@ class _PRRow extends StatelessWidget {
                       ),
                     ),
                   const SizedBox(height: 4),
-                  Text(
-                    recordGapText!,
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: isNewRecord ? C.accent : C.text3(dark),
-                      fontWeight: isNewRecord ? FontWeight.w700 : FontWeight.w400,
-                    ),
-                  ),
+                  isNewRecord
+                      ? Center(
+                          child: Text(
+                            recordGapText!,
+                            style: const TextStyle(fontSize: 10, color: C.accent, fontWeight: FontWeight.w700),
+                          ),
+                        )
+                      : Text(
+                          recordGapText!,
+                          style: TextStyle(fontSize: 10, color: C.text3(dark)),
+                        ),
                 ],
               ),
             ),
