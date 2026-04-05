@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'design_system.dart';
+import 'package:flutter/services.dart';
 
 final _supabase = Supabase.instance.client;
 
@@ -19,6 +20,7 @@ class _MaxesScreenState extends State<MaxesScreen> {
   bool _loading = true;
   String? _myId;
   String? _myTeamId;
+  int? _deletingIndex;
 
   @override
   void initState() {
@@ -69,6 +71,104 @@ class _MaxesScreenState extends State<MaxesScreen> {
         onSaved: () {
           _loadMaxes();
         },
+      ),
+    );
+  }
+
+void _confirmDelete(Map<String, dynamic> entry, int index) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final liftType = _selectedLift; // capture before async
+    
+    HapticFeedback.mediumImpact();
+    
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        margin: const EdgeInsets.fromLTRB(20, 0, 20, 40),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: C.surface(dark),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: C.border(dark), width: 0.5),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: C.accent.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.delete_outline, color: C.accent, size: 22),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'Delete $liftType max?',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: C.text1(dark)),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '${entry['weight_lbs']} lbs will be removed',
+              style: TextStyle(fontSize: 14, color: C.text3(dark)),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      decoration: BoxDecoration(
+                        color: C.surface2(dark),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text('Cancel', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: C.text2(dark))),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () async {
+                      Navigator.pop(context);
+                      HapticFeedback.heavyImpact();
+                      
+                      setState(() => _deletingIndex = index);
+                      await Future.delayed(const Duration(milliseconds: 300));
+                      
+                      try {
+                        await _supabase
+                            .from('lifting_maxes')
+                            .delete()
+                            .eq('athlete_id', _myId!)
+                            .eq('lift_type', liftType);
+                      } catch (e) {
+                        print('Delete error: $e');
+                      }
+                      
+                      setState(() => _deletingIndex = null);
+                      await _loadMaxes();
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      decoration: BoxDecoration(
+                        color: C.accent,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      alignment: Alignment.center,
+                      child: const Text('Delete', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -215,14 +315,29 @@ class _MaxesScreenState extends State<MaxesScreen> {
                               final isMe = entry['athlete_id'] == _myId;
                               final rank = i + 1;
 
+                              final isDeleting = _deletingIndex == i;
                               return FadeSlideIn(
                                 delay: Duration(milliseconds: i * 40),
-                                child: _MaxRow(
-                                  rank: rank,
-                                  name: name,
-                                  weight: weight,
-                                  isMe: isMe,
-                                  dark: dark,
+                                child: AnimatedSlide(
+                                  duration: const Duration(milliseconds: 300),
+                                  curve: Curves.easeInBack,
+                                  offset: isDeleting ? const Offset(1.0, 0) : Offset.zero,
+                                  child: AnimatedOpacity(
+                                    duration: const Duration(milliseconds: 250),
+                                    opacity: isDeleting ? 0.0 : 1.0,
+                                    child: GestureDetector(
+                                      onLongPress: isMe ? () {
+                                        _confirmDelete(entry, i);
+                                      } : null,
+                                      child: _MaxRow(
+                                        rank: rank,
+                                        name: name,
+                                        weight: weight,
+                                        isMe: isMe,
+                                        dark: dark,
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               );
                             },

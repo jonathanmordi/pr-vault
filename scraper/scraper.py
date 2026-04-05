@@ -125,11 +125,18 @@ def clean_mark(raw: str) -> str | None:
 def check_and_update_school_record(team_id, gender, event, new_seconds, new_meters, display, holder_name, meet_date):
     """If the new mark beats the school record, update it."""
     try:
+        # Determine season from meet date
+        season = 'indoor'
+        if meet_date and len(meet_date) >= 7:
+            month = int(meet_date[5:7])
+            season = 'outdoor' if 3 <= month <= 8 else 'indoor'
+
         result = supabase.table("school_records") \
             .select("id, record_mark_seconds, record_mark_meters") \
             .eq("team_id", team_id) \
             .eq("event", event) \
             .eq("gender", gender) \
+            .eq("season", season) \
             .maybe_single() \
             .execute()
         existing = result.data if result else None
