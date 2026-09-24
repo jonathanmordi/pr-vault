@@ -396,12 +396,9 @@ class _InviteCodeScreenState extends State<InviteCodeScreen> {
 
     setState(() => _loading = true);
     try {
-      // Look up the team by invite code
-      final result = await supabase
-          .from('teams')
-          .select('id, name')
-          .eq('invite_code', code)
-          .maybeSingle();
+      // Server validates the code and sets our team_id (see join_team in
+      // backend/supabase/migrations). Returns null for an unknown code.
+      final result = await supabase.rpc('join_team', params: {'p_code': code});
 
       if (result == null) {
         if (mounted) {
@@ -411,12 +408,6 @@ class _InviteCodeScreenState extends State<InviteCodeScreen> {
         }
         return;
       }
-
-      // Link the profile to the team
-      await supabase
-          .from('profiles')
-          .update({'team_id': result['id']})
-          .eq('id', widget.userId);
 
       // AuthGate will notice the new session; simply unwind the stack.
       if (mounted) Navigator.of(context).popUntil((r) => r.isFirst);

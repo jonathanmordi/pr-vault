@@ -69,18 +69,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final name = meta?['full_name'] ?? email.split('@')[0];
 
     try {
-      final teamResult = await supabase.from('teams').select('id').limit(1);
-      final teamId = (teamResult as List).isNotEmpty ? teamResult[0]['id'] : null;
-
+      // New profiles start teamless; team_id is only ever set by join_team.
       await supabase.from('profiles').insert({
         'id': uid,
         'full_name': name,
-        'team_id': teamId,
         'role': 'athlete',
       });
 
       setState(() {
-        _profile = {'id': uid, 'full_name': name, 'team_id': teamId, 'role': 'athlete'};
+        _profile = {'id': uid, 'full_name': name, 'team_id': null, 'role': 'athlete'};
         _prs = [];
         _linked = false;
         _showSearch = true;
@@ -127,32 +124,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     setState(() => _linking = true);
     final oldId = tfrrsProfile['id'] as String;
-    final tfrrsId = tfrrsProfile['tfrrs_athlete_id'] as String?;
 
     try {
-      await supabase.from('profiles').update({
-        'tfrrs_athlete_id': tfrrsId,
-      }).eq('id', uid);
-
-      await supabase
-          .from('track_prs')
-          .update({'athlete_id': uid})
-          .eq('athlete_id', oldId);
-
-      await supabase
-          .from('meet_appearances')
-          .update({'athlete_id': uid})
-          .eq('athlete_id', oldId);
-
-      final check = await supabase
-          .from('track_prs')
-          .select('id')
-          .eq('athlete_id', uid)
-          .limit(1);
-
-      if ((check as List).isNotEmpty) {
-        await supabase.from('profiles').delete().eq('id', oldId);
-      }
+      // Moves the scraped profile's PRs and meet history onto our account in
+      // one server-side transaction (see claim_tfrrs_profile).
+      await supabase.rpc('claim_tfrrs_profile', params: {'p_profile_id': oldId});
 
       await _load();
     } catch (e) {
