@@ -68,7 +68,10 @@ def parse_meet_date(raw: str) -> str | None:
 
 def parse_time_to_seconds(raw: str) -> float | None:
     """Converts '1:52.34' or '52.34' to float seconds. Returns None if not a time."""
-    raw = raw.strip().split()[0]  # strip wind readings
+    parts = raw.strip().split()  # strip wind readings
+    if not parts:
+        return None
+    raw = parts[0]
     try:
         if ':' in raw:
             parts = raw.split(':')
@@ -81,7 +84,10 @@ def parse_time_to_seconds(raw: str) -> float | None:
 
 def parse_mark_to_meters(raw: str) -> float | None:
     """Converts '6.45m' or '6.45' to float meters. Returns None if unparseable."""
-    raw = raw.strip().split()[0]
+    parts = raw.strip().split()
+    if not parts:
+        return None
+    raw = parts[0]
     try:
         return round(float(raw.replace('m', '')), 4)
     except:
@@ -116,10 +122,10 @@ def clean_mark(raw: str) -> str | None:
 
     # Take just the numeric part (strip wind reading in parens)
     mark = first_line.split('(')[0].strip()
-    mark = mark.split()[0].strip()
-    if not mark:
+    tokens = mark.split()
+    if not tokens:
         return None
-    return mark
+    return tokens[0].strip()
 
 
 def check_and_update_school_record(team_id, gender, event, new_seconds, new_meters, display, holder_name, meet_date):

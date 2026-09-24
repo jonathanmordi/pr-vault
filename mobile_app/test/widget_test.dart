@@ -1,30 +1,33 @@
-// This is a basic Flutter widget test.
+// Unit tests for pure app logic.
 //
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
+// The heavy screens (leaderboard, profiles, maxes) are wired directly to
+// Supabase, so widget-level tests would need a live/mocked backend. The pure,
+// backend-free logic worth locking down lives in helpers like formatName,
+// which turns TFRRS "Last, First" strings into display names shown all over
+// the UI.
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:mobile_app/main.dart';
+import 'package:mobile_app/design_system.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  group('formatName', () {
+    test('flips "Last, First" into "First Last"', () {
+      expect(formatName('Smith, John'), 'John Smith');
+    });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    test('trims whitespace around the comma', () {
+      expect(formatName('Smith ,  John'), 'John Smith');
+    });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    test('leaves an already-formatted name untouched', () {
+      expect(formatName('John Smith'), 'John Smith');
+    });
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    test('handles a single name with no comma', () {
+      expect(formatName('Cher'), 'Cher');
+    });
+
+    test('handles hyphenated and multi-part last names', () {
+      expect(formatName('Smith-Jones, Mary Ann'), 'Mary Ann Smith-Jones');
+    });
   });
 }
