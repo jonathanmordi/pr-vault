@@ -356,4 +356,47 @@ void main() {
       expect(formatGap('Long Jump', 0.12), '0.12m');
     });
   });
+
+  group('latestRanksByEvent', () {
+    Map<String, dynamic> rank(String event, String scope, String season,
+            int year, int place) =>
+        {
+          'event': event,
+          'scope': scope,
+          'label': scope == 'national' ? 'D3' : 'MAC',
+          'season': season,
+          'season_year': year,
+          'rank': place,
+          'list_size': 500,
+        };
+
+    test('uses the most recent season, national first', () {
+      final ranks = latestRanksByEvent([
+        rank('Long Jump', 'conference', 'indoor', 2026, 4),
+        rank('Long Jump', 'conference', 'outdoor', 2026, 2),
+        rank('Long Jump', 'national', 'outdoor', 2026, 66),
+        rank('Long Jump', 'national', 'outdoor', 2025, 90),
+      ])['Long Jump']!;
+      expect(ranks.map((r) => '${r.label} #${r.rank}'), ['D3 #66', 'MAC #2']);
+      expect(ranks.first.seasonLabel, 'Outdoor 2026');
+    });
+
+    test('never mixes seasons between national and conference', () {
+      // Nationally ranked indoors only; the outdoor conference rank is newer.
+      final ranks = latestRanksByEvent([
+        rank('High Jump', 'national', 'indoor', 2026, 19),
+        rank('High Jump', 'conference', 'outdoor', 2026, 1),
+      ])['High Jump']!;
+      expect(ranks.map((r) => r.scope), ['conference']);
+    });
+
+    test('keeps events separate and skips incomplete rows', () {
+      final ranks = latestRanksByEvent([
+        rank('60 Meters', 'conference', 'indoor', 2026, 6),
+        rank('100 Meters', 'conference', 'outdoor', 2026, 15),
+        {'event': '200 Meters', 'scope': 'national'},
+      ]);
+      expect(ranks.keys, unorderedEquals(['60 Meters', '100 Meters']));
+    });
+  });
 }

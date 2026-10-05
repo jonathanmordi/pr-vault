@@ -1,10 +1,11 @@
 import os
 import re
+import sys
 import uuid
 from datetime import datetime
 from dotenv import load_dotenv
 from supabase import create_client
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
 load_dotenv()
 
@@ -379,7 +380,236 @@ def scrape_team_roster(page, team_url, team_id):
     return athletes
 
 
-def run_scraper():
+# ─── Performance-list ranks ───────────────────────────────────────────────────
+
+LIST_INDEXES = {
+    "indoor": "https://tf.tfrrs.org/indoor_lists.html",
+    "outdoor": "https://tf.tfrrs.org/outdoor_lists.html",
+}
+# (link text on the list index pages, label shown in the app)
+NATIONAL_LIST = ("NCAA Div. III", "D3")
+LIST_DEPTH = "500"  # deepest option TFRRS offers; the default is ~25-50
+
+# TFRRS hides every event block but the first, and innerText is empty for
+# hidden elements, so read textContent.
+_LIST_ROWS_JS = """() => [...document.querySelectorAll('div.row[class*="gender_"]')].map(block => ({
+  event: block.querySelector('.custom-table-title h3')?.textContent || '',
+  rows: [...block.querySelectorAll('.performance-list-row')].map(r => ({
+    place: r.querySelector('.col-place')?.textContent || '',
+    href: r.querySelector('.col-athlete a')?.getAttribute('href') || null,
+    mark: r.querySelector('[data-label="Time"], [data-label="Mark"], [data-label="Points"]')?.textContent || '',
+    date: r.querySelector('[data-label="Meet Date"]')?.textContent || '',
+  })),
+}))"""
+
+
+def parse_list_event(raw: str) -> str:
+    """'100 Meters (Men)' → '100 Meters', matching the athlete-page names."""
+    raw = re.sub(r'\((?:Men|Women)\)', '', clean_event_name(raw or ''))
+    return re.sub(r'\s+', ' ', raw).strip()
+
+
+def parse_tfrrs_athlete_id(href: str | None) -> str | None:
+    """'https://tf.tfrrs.org/athletes/8668013/Misericordia/Jacob__Hunter' → '8668013'."""
+    m = re.search(r'/athletes/(\d+)', href or '')
+    return m.group(1) if m else None
+
+
+def parse_list_mark(raw: str | None) -> str | None:
+    """' 3:15.31 % ' → '3:15.31'. Drops footnote markers after the mark."""
+    tokens = (raw or '').split()
+    return tokens[0] if tokens else None
+
+
+def parse_place(raw: str) -> int | None:
+    """' 12 ' → 12. Ties repeat the same number on consecutive rows."""
+    m = re.match(r'\s*(\d+)', raw or '')
+    return int(m.group(1)) if m else None
+
+
+def parse_list_year(selected_list: str | None, meet_dates: list[str]) -> int | None:
+    """Season year from the list picker ('... Outdoor List (2026)'), falling
+    back to the latest meet date on the list."""
+    m = re.search(r'\((\d{4})\)\s*$', (selected_list or '').strip())
+    if m:
+        return int(m.group(1))
+    years = [int(d[:4]) for d in (parse_meet_date(x) for x in meet_dates if x.strip()) if d]
+    return max(years) if years else None
+
+
+def pick_list_url(links: list[tuple[str, str]], link_text: str) -> str | None:
+    """URL of the list whose link on the index page reads exactly `link_text`."""
+    for text, href in links:
+        if text.strip() == link_text and '/lists/' in href:
+            return href.split('?')[0]
+    return None
+
+
+def pick_conference(league_links: list[str]) -> str | None:
+    """A team page links its conference and its NCAA region; return the conference."""
+    for text in league_links:
+        text = text.strip()
+        if text and 'region' not in text.lower():
+            return text
+    return None
+
+
+def list_label(conference: str) -> str:
+    """Short display name: 'Middle Atlantic Conferences' → 'MAC', 'SUNYAC' → 'SUNYAC'."""
+    parts = []
+    for word in re.findall(r'[A-Za-z0-9]+', conference):
+        if word.islower():
+            continue  # "of", "the"
+        parts.append(word if word.isupper() and len(word) > 1 else word[0].upper())
+    return ''.join(parts) or conference
+
+
+def build_rank_entries(blocks, roster, team_id, list_info):
+    """Turns scraped list blocks into list_ranks rows for athletes on our roster.
+
+    blocks:    [{'event': str, 'rows': [{'place', 'href', 'mark', 'date'}]}]
+    roster:    {tfrrs_athlete_id: profile_id}
+    list_info: scope, label, season, season_year, list_name, list_url
+    """
+    best = {}
+    for block in blocks:
+        event = parse_list_event(block.get('event', ''))
+        rows = block.get('rows', [])
+        if not event or 'relay' in event.lower():
+            continue
+        for row in rows:
+            athlete_id = roster.get(parse_tfrrs_athlete_id(row.get('href')))
+            place = parse_place(row.get('place', ''))
+            if not athlete_id or place is None:
+                continue
+            key = (athlete_id, event)
+            if key in best and best[key]['rank'] <= place:
+                continue
+            best[key] = {
+                'team_id': team_id,
+                'athlete_id': athlete_id,
+                'event': event,
+                'scope': list_info['scope'],
+                'label': list_info['label'],
+                'season': list_info['season'],
+                'season_year': list_info['season_year'],
+                'rank': place,
+                'list_size': len(rows),
+                'mark_display': parse_list_mark(row.get('mark')),
+                'list_name': list_info['list_name'],
+                'list_url': list_info['list_url'],
+            }
+    return list(best.values())
+
+
+def read_conference(page):
+    """Reads the conference name off a TFRRS team page that's already open."""
+    texts = page.eval_on_selector_all(
+        "a[href*='/leagues/']", "as => as.map(a => a.textContent.trim())")
+    return pick_conference(texts)
+
+
+def find_rank_lists(page, conference):
+    """Finds this season's national and conference lists, indoor and outdoor.
+    List ids change every season, so look them up by name each run."""
+    targets = [("national", *NATIONAL_LIST)]
+    if conference:
+        targets.append(("conference", conference, list_label(conference)))
+    found = []
+    for season, index_url in LIST_INDEXES.items():
+        page.goto(index_url, wait_until="domcontentloaded")
+        page.wait_for_timeout(3000)
+        links = page.eval_on_selector_all(
+            "a[href*='/lists/']", "as => as.map(a => [a.textContent.trim(), a.href])")
+        for scope, link_text, label in targets:
+            url = pick_list_url(links, link_text)
+            if url:
+                found.append({"scope": scope, "label": label, "season": season, "url": url})
+            else:
+                print(f"  WARNING: no {season} list called '{link_text}'")
+    return found
+
+
+def scrape_list(page, url):
+    """Loads a TFRRS performance list at its deepest setting, both genders.
+    Returns (list name, season year, event blocks)."""
+    page.goto(url, wait_until="domcontentloaded")
+    page.wait_for_timeout(3000)
+    before = page.eval_on_selector_all('.performance-list-row', 'rs => rs.length')
+    page.select_option("select[name=limit]", LIST_DEPTH)
+    page.select_option("select[name=gender]", "")
+    # The filter form reloads the list into a Turbo frame.
+    page.eval_on_selector("form[action*='list_data']", "f => f.requestSubmit()")
+    try:
+        page.wait_for_function(
+            f"() => document.querySelectorAll('.performance-list-row').length !== {before}",
+            timeout=60000,
+        )
+    except PlaywrightTimeout:
+        print(f"  WARNING: deeper list never loaded for {url}; using the default depth")
+    page.wait_for_timeout(1000)
+
+    blocks = page.evaluate(_LIST_ROWS_JS)
+    selected = page.eval_on_selector(
+        "select[name=other_lists]", "s => s.options[s.selectedIndex]?.text || ''")
+    name = page.title().replace('TFRRS |', '').strip()
+    dates = [r['date'] for b in blocks for r in b['rows']]
+    return name, parse_list_year(selected, dates), blocks
+
+
+def load_roster(team_id):
+    """{tfrrs_athlete_id: profile_id} for everyone on the team linked to TFRRS."""
+    result = supabase.table("profiles") \
+        .select("id, tfrrs_athlete_id") \
+        .eq("team_id", team_id) \
+        .not_.is_("tfrrs_athlete_id", "null") \
+        .execute()
+    return {r["tfrrs_athlete_id"]: r["id"] for r in result.data or []}
+
+
+def scrape_list_ranks(page, team_id, conference, dry_run=False):
+    """Records each athlete's rank on the national and conference lists."""
+    roster = load_roster(team_id)
+    print(f"\nRanking {len(roster)} athletes on TFRRS lists "
+          f"(conference: {conference or 'unknown'})")
+
+    for info in find_rank_lists(page, conference):
+        try:
+            name, year, blocks = scrape_list(page, info["url"])
+            if year is None:
+                print(f"  WARNING: couldn't tell which season {info['url']} is; skipping")
+                continue
+            entries = build_rank_entries(blocks, roster, team_id, {
+                **info, "season_year": year, "list_name": name, "list_url": info["url"],
+            })
+            depth = max((len(b['rows']) for b in blocks), default=0)
+            print(f"  {name} ({info['season']} {year}): {len(entries)} ranks, "
+                  f"up to {depth} deep")
+
+            if dry_run:
+                for e in sorted(entries, key=lambda e: e['rank'])[:5]:
+                    print(f"    #{e['rank']} of {e['list_size']} {e['label']}  "
+                          f"{e['event']}  {e['mark_display']}")
+                continue
+
+            # Rewrite the whole season so athletes who were pushed off the
+            # list don't keep a stale rank.
+            supabase.table("list_ranks").delete() \
+                .eq("team_id", team_id) \
+                .eq("scope", info["scope"]) \
+                .eq("season", info["season"]) \
+                .eq("season_year", year) \
+                .execute()
+            if entries:
+                supabase.table("list_ranks").upsert(
+                    entries, on_conflict="athlete_id,event,scope,season,season_year"
+                ).execute()
+        except Exception as e:
+            print(f"  WARNING: skipped {info['url']}: {e}")
+        page.wait_for_timeout(3000)
+
+
+def run_scraper(ranks_only=False, dry_run=False):
     team_urls = [
         "https://www.tfrrs.org/teams/tf/NJ_college_m_Stevens.html",
         "https://www.tfrrs.org/teams/tf/NJ_college_f_Stevens.html",
@@ -399,9 +629,17 @@ def run_scraper():
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
         })
 
+        conference = None
         for team_url in team_urls:
             gender = 'F' if '_f_' in team_url else 'M'
+            if ranks_only:
+                page.goto(team_url, wait_until="domcontentloaded")
+                page.wait_for_timeout(3000)
+                conference = read_conference(page)
+                break
+
             roster = scrape_team_roster(page, team_url, team_id)
+            conference = conference or read_conference(page)
 
             for athlete in roster:
                 try:
@@ -440,10 +678,20 @@ def run_scraper():
 
                 page.wait_for_timeout(3000)
 
+        # Ranks are extra: a TFRRS layout change or a database that doesn't
+        # have list_ranks yet shouldn't fail the nightly PR scrape.
+        try:
+            scrape_list_ranks(page, team_id, conference, dry_run=dry_run)
+        except Exception as e:
+            print(f"\nWARNING: list ranks skipped: {e}")
+
         browser.close()
 
     print("\nScrape complete.")
 
 
 if __name__ == "__main__":
-    run_scraper()
+    # --ranks-only        skip athlete pages, just refresh list ranks
+    # --dry-run           print the ranks instead of saving (implies --ranks-only)
+    dry_run = "--dry-run" in sys.argv
+    run_scraper(ranks_only=dry_run or "--ranks-only" in sys.argv, dry_run=dry_run)

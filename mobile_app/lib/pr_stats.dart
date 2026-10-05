@@ -362,3 +362,75 @@ Map<String, Rival> rivalsFor(String athleteId, String? gender,
   }
   return rivals;
 }
+
+// ─── Performance-list ranks ───────────────────────────────────────────────────
+
+/// An athlete's place on a TFRRS national or conference performance list.
+/// Lists rank season bests, so every rank belongs to a season.
+class ListRank {
+  final String event;
+  final String scope; // 'national' or 'conference'
+  final String label; // e.g. 'D3', 'MAC'
+  final String season; // 'indoor' or 'outdoor'
+  final int seasonYear;
+  final int rank;
+  final int listSize;
+
+  const ListRank({
+    required this.event,
+    required this.scope,
+    required this.label,
+    required this.season,
+    required this.seasonYear,
+    required this.rank,
+    required this.listSize,
+  });
+
+  /// Parses a list_ranks row, or returns null if it's incomplete.
+  static ListRank? tryParse(Map<String, dynamic> row) {
+    final event = row['event'] as String?;
+    final scope = row['scope'] as String?;
+    final season = row['season'] as String?;
+    final year = (row['season_year'] as num?)?.toInt();
+    final rank = (row['rank'] as num?)?.toInt();
+    if (event == null || scope == null || season == null || year == null ||
+        rank == null) {
+      return null;
+    }
+    return ListRank(
+      event: event,
+      scope: scope,
+      label: row['label'] as String? ??
+          (scope == 'national' ? 'National' : 'Conf.'),
+      season: season,
+      seasonYear: year,
+      rank: rank,
+      listSize: (row['list_size'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  /// Later seasons sort higher; outdoor follows indoor within a year.
+  int get recency => seasonYear * 2 + (season == 'outdoor' ? 1 : 0);
+
+  String get seasonLabel =>
+      '${season == 'outdoor' ? 'Outdoor' : 'Indoor'} $seasonYear';
+}
+
+/// For each event, the ranks from the most recent season the athlete was
+/// ranked in, national first. National and conference ranks are never mixed
+/// across seasons, so one season label describes them both.
+Map<String, List<ListRank>> latestRanksByEvent(
+    Iterable<Map<String, dynamic>> rows) {
+  final byEvent = <String, List<ListRank>>{};
+  for (final row in rows) {
+    final r = ListRank.tryParse(row);
+    if (r != null) byEvent.putIfAbsent(r.event, () => []).add(r);
+  }
+  return byEvent.map((event, ranks) {
+    final latest = ranks.map((r) => r.recency).reduce((a, b) => a > b ? a : b);
+    final current = ranks.where((r) => r.recency == latest).toList()
+      ..sort((a, b) => (a.scope == 'national' ? 0 : 1)
+          .compareTo(b.scope == 'national' ? 0 : 1));
+    return MapEntry(event, current);
+  });
+}

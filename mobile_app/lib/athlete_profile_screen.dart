@@ -31,6 +31,7 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
   List<Map<String, dynamic>> _appearances = [];
   List<Map<String, dynamic>> _records = [];
   List<Map<String, dynamic>> _maxes = [];
+  Map<String, List<ListRank>> _ranks = {};
   TeamSnapshot? _team;
   bool _loading = true;
   String? _error;
@@ -49,6 +50,15 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
     TeamData.instance.load().then((team) {
       if (mounted) setState(() => _team = team);
     }).catchError((_) {});
+
+    // Ranks are optional: before the list_ranks migration is applied this
+    // query fails, and the profile should still load.
+    final ranksFuture = _supabase
+        .from('list_ranks')
+        .select('event, scope, label, season, season_year, rank, list_size')
+        .eq('athlete_id', widget.athleteId)
+        .then<List<Map<String, dynamic>>>((rows) => rows,
+            onError: (_) => const <Map<String, dynamic>>[]);
 
     try {
       // Independent queries, so fetch them in parallel.
@@ -70,12 +80,14 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
             .eq('athlete_id', widget.athleteId)
             .order('lift_type'),
       ]);
+      final ranks = latestRanksByEvent(await ranksFuture);
       if (!mounted) return;
       setState(() {
         _prs = results[0];
         _appearances = results[1];
         _records = results[2];
         _maxes = results[3];
+        _ranks = ranks;
         _loading = false;
         _error = null;
         if (_prs.isNotEmpty) {
@@ -496,7 +508,7 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                                     final record = _getRecordForPR(pr);
                                     final gapText = record != null ? _recordGapText(pr, record) : null;
                                     final pct = record != null ? _recordPercentage(pr, record) : null;
-                                    return _PRRow(pr: pr, isLast: isLast, delta: delta, dark: dark, recordGapText: gapText, recordPct: pct);
+                                    return _PRRow(pr: pr, isLast: isLast, delta: delta, dark: dark, recordGapText: gapText, recordPct: pct, ranks: _ranks[pr['event']] ?? const []);
                                   }).toList(),
                                 ),
                               ),
@@ -1347,7 +1359,10 @@ class _PRRow extends StatelessWidget {
   final String? recordGapText;
   final double? recordPct;
 
-  const _PRRow({required this.pr, required this.isLast, required this.delta, required this.dark, this.recordGapText, this.recordPct});
+  /// National then conference rank from the latest ranked season.
+  final List<ListRank> ranks;
+
+  const _PRRow({required this.pr, required this.isLast, required this.delta, required this.dark, this.recordGapText, this.recordPct, this.ranks = const []});
 
   @override
   Widget build(BuildContext context) {
@@ -1389,6 +1404,27 @@ class _PRRow extends StatelessWidget {
               ),
             ],
           ),
+          if (ranks.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.only(left: 52),
+              child: Row(
+                children: [
+                  for (final r in ranks) ...[
+                    _rankPill(r),
+                    const SizedBox(width: 6),
+                  ],
+                  Expanded(
+                    child: Text(
+                      ranks.first.seasonLabel.toLowerCase(),
+                      style: TextStyle(fontSize: 10, color: C.text3(dark)),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           if (recordGapText != null && recordGapText!.isNotEmpty) ...[
             const SizedBox(height: 8),
             Padding(
@@ -1427,6 +1463,25 @@ class _PRRow extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _rankPill(ListRank r) {
+    final top = r.rank <= 10;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: top ? C.accentSoft(dark) : C.surface2(dark),
+        borderRadius: BorderRadius.circular(100),
+      ),
+      child: Text(
+        '#${r.rank} ${r.label}',
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: top ? C.accent : C.text2(dark),
+        ),
       ),
     );
   }

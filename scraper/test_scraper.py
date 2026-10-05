@@ -14,6 +14,15 @@ from scraper import (
     is_field_event,
     clean_event_name,
     clean_mark,
+    parse_list_event,
+    parse_tfrrs_athlete_id,
+    parse_place,
+    parse_list_mark,
+    parse_list_year,
+    pick_list_url,
+    pick_conference,
+    list_label,
+    build_rank_entries,
 )
 
 
@@ -138,3 +147,141 @@ class TestCleanMark:
 
     def test_case_insensitive_nonresult(self):
         assert clean_mark("dns") is None
+
+
+# ─── Performance-list ranks ───────────────────────────────────────────────────
+
+class TestParseListEvent:
+    @pytest.mark.parametrize("raw,expected", [
+        ("100 Meters (Men)", "100 Meters"),
+        (" Long Jump (Women) ", "Long Jump"),
+        ("10,000 Meters", "10,000 Meters"),
+        ("\n 400 Meters \n", "400 Meters"),
+    ])
+    def test_matches_athlete_page_names(self, raw, expected):
+        assert parse_list_event(raw) == expected
+
+
+class TestParseTfrrsAthleteId:
+    def test_extracts_id(self):
+        href = "https://tf.tfrrs.org/athletes/8668013/Misericordia/Jacob__Hunter"
+        assert parse_tfrrs_athlete_id(href) == "8668013"
+
+    @pytest.mark.parametrize("bad", [None, "", "https://tf.tfrrs.org/teams/tf/x.html"])
+    def test_no_athlete_link(self, bad):
+        assert parse_tfrrs_athlete_id(bad) is None
+
+
+class TestParseListMark:
+    @pytest.mark.parametrize("raw,expected", [
+        (" 3:15.31 % ", "3:15.31"),  # footnote marker
+        ("6.45m", "6.45m"),
+        ("6212", "6212"),            # multi-event points
+    ])
+    def test_marks(self, raw, expected):
+        assert parse_list_mark(raw) == expected
+
+    @pytest.mark.parametrize("empty", [None, "", "   "])
+    def test_empty(self, empty):
+        assert parse_list_mark(empty) is None
+
+
+class TestParsePlace:
+    @pytest.mark.parametrize("raw,expected", [(" 12 ", 12), ("1", 1), ("6\n", 6)])
+    def test_places(self, raw, expected):
+        assert parse_place(raw) == expected
+
+    @pytest.mark.parametrize("bad", ["", None, "-", "DQ"])
+    def test_missing_place(self, bad):
+        assert parse_place(bad) is None
+
+
+class TestParseListYear:
+    def test_reads_year_from_list_picker(self):
+        assert parse_list_year("Middle Atlantic Conference Outdoor List (2026)", []) == 2026
+
+    def test_falls_back_to_latest_meet_date(self):
+        assert parse_list_year("", ["Jan 10, 2026", "Feb 27-28, 2026", "Dec 6, 2025"]) == 2026
+
+    def test_unknown(self):
+        assert parse_list_year(None, ["", "  "]) is None
+
+
+class TestPickListUrl:
+    LINKS = [
+        ("NCAA Div. II", "https://tf.tfrrs.org/lists/5603/2026_NCAA_Division_II_Outdoor"),
+        ("NCAA Div. III", "https://tf.tfrrs.org/lists/5604/2026_NCAA_Division_III_Outdoor"),
+        ("m", "https://tf.tfrrs.org/lists/5604/2026_NCAA_Division_III_Outdoor?gender=m"),
+        ("Middle Atlantic Conferences", "https://tf.tfrrs.org/lists/5732/MAC_Outdoor_List?gender=f"),
+    ]
+
+    def test_exact_label_match(self):
+        # "NCAA Div. II" must not match "NCAA Div. III"
+        assert pick_list_url(self.LINKS, "NCAA Div. III").endswith("/5604/2026_NCAA_Division_III_Outdoor")
+
+    def test_strips_query(self):
+        assert pick_list_url(self.LINKS, "Middle Atlantic Conferences") == \
+            "https://tf.tfrrs.org/lists/5732/MAC_Outdoor_List"
+
+    def test_missing(self):
+        assert pick_list_url(self.LINKS, "Liberty League") is None
+
+
+class TestPickConference:
+    def test_skips_region(self):
+        assert pick_conference(["DIII Metro Region", "Middle Atlantic Conferences"]) == \
+            "Middle Atlantic Conferences"
+
+    def test_none(self):
+        assert pick_conference([" ", "DIII Metro Region"]) is None
+
+
+class TestListLabel:
+    @pytest.mark.parametrize("name,label", [
+        ("Middle Atlantic Conferences", "MAC"),
+        ("New Jersey Athletic Conference", "NJAC"),
+        ("SUNYAC", "SUNYAC"),
+        ("Empire 8", "E8"),
+        ("University Athletic Association of the East", "UAAE"),
+    ])
+    def test_labels(self, name, label):
+        assert list_label(name) == label
+
+
+class TestBuildRankEntries:
+    ROSTER = {"111": "athlete-a", "222": "athlete-b"}
+    INFO = {
+        "scope": "conference", "label": "MAC", "season": "outdoor",
+        "season_year": 2026, "list_name": "MAC Outdoor List", "list_url": "u",
+    }
+
+    @staticmethod
+    def row(place, tfrrs_id, mark="10.50"):
+        return {"place": f" {place} ", "href": f"https://tf.tfrrs.org/athletes/{tfrrs_id}/Stevens/X",
+                "mark": f" {mark} ", "date": "Apr 30, 2026"}
+
+    def test_keeps_only_roster_athletes(self):
+        blocks = [{"event": "100 Meters (Men)", "rows": [
+            self.row(1, "999"), self.row(2, "111"), self.row(3, "998"), self.row(4, "222"),
+        ]}]
+        entries = build_rank_entries(blocks, self.ROSTER, "team", self.INFO)
+        assert [(e["athlete_id"], e["rank"], e["list_size"]) for e in entries] == [
+            ("athlete-a", 2, 4), ("athlete-b", 4, 4),
+        ]
+        a = entries[0]
+        assert a["event"] == "100 Meters"
+        assert a["mark_display"] == "10.50"
+        assert a["team_id"] == "team" and a["label"] == "MAC" and a["season_year"] == 2026
+
+    def test_skips_relays_and_rows_without_athletes(self):
+        blocks = [
+            {"event": "4 x 100 Relay (Men)", "rows": [self.row(1, "111")]},
+            {"event": "200 Meters (Men)", "rows": [{"place": "1", "href": None, "mark": "", "date": ""}]},
+        ]
+        assert build_rank_entries(blocks, self.ROSTER, "team", self.INFO) == []
+
+    def test_keeps_best_place_if_listed_twice(self):
+        blocks = [{"event": "Long Jump", "rows": [self.row(7, "111", "6.40m"), self.row(3, "111", "6.80m")]}]
+        (entry,) = build_rank_entries(blocks, self.ROSTER, "team", self.INFO)
+        assert entry["rank"] == 3 and entry["mark_display"] == "6.80m"
+
