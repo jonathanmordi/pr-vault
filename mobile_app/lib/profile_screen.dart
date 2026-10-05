@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'design_system.dart';
 import 'athlete_profile_screen.dart';
+import 'team_data.dart';
 
 final supabase = Supabase.instance.client;
 
@@ -24,6 +26,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final _searchCtrl = TextEditingController();
   bool _searching = false;
   bool _linking = false;
+  Timer? _searchDebounce;
+  int _searchSeq = 0;
 
   @override
   void initState() {
@@ -33,8 +37,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  /// Waits for a pause in typing instead of querying on every keystroke.
+  void _onSearchChanged(String query) {
+    _searchDebounce?.cancel();
+    setState(() {}); // show/hide the clear button
+    _searchDebounce = Timer(
+      const Duration(milliseconds: 250),
+      () => _searchAthletes(query),
+    );
   }
 
   Future<void> _load() async {
@@ -95,8 +110,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _searchAthletes(String query) async {
+    // Responses can arrive out of order; only the latest search may win.
+    final seq = ++_searchSeq;
     if (query.length < 2) {
-      setState(() => _searchResults = []);
+      setState(() {
+        _searchResults = [];
+        _searching = false;
+      });
       return;
     }
     setState(() => _searching = true);
@@ -109,11 +129,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
           .ilike('full_name', '%$query%')
           .limit(10);
 
+      if (!mounted || seq != _searchSeq) return;
       setState(() {
         _searchResults = List<Map<String, dynamic>>.from(results);
         _searching = false;
       });
     } catch (_) {
+      if (!mounted || seq != _searchSeq) return;
       setState(() => _searching = false);
     }
   }
@@ -130,6 +152,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       // one server-side transaction (see claim_tfrrs_profile).
       await supabase.rpc('claim_tfrrs_profile', params: {'p_profile_id': oldId});
 
+      // Our results just moved to a new athlete id; drop the stale cache.
+      TeamData.instance.load(force: true).ignore();
       await _load();
     } catch (e) {
       setState(() => _linking = false);
@@ -320,14 +344,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       isDense: true,
                       contentPadding: EdgeInsets.zero,
                     ),
-                    onChanged: _searchAthletes,
+                    onChanged: _onSearchChanged,
                   ),
                 ),
                 if (_searchCtrl.text.isNotEmpty)
                   GestureDetector(
                     onTap: () {
+                      _searchDebounce?.cancel();
+                      _searchSeq++; // drop any search still in flight
                       _searchCtrl.clear();
-                      setState(() => _searchResults = []);
+                      setState(() {
+                        _searchResults = [];
+                        _searching = false;
+                      });
                     },
                     child: Padding(
                       padding: const EdgeInsets.all(8),

@@ -81,10 +81,15 @@ class FadeSlideIn extends StatefulWidget {
   final Widget child;
   final Duration delay;
 
+  /// When false the child shows immediately. Read once on first build, so
+  /// list rows that scroll into view later don't replay the entrance.
+  final bool animate;
+
   const FadeSlideIn({
     super.key,
     required this.child,
     this.delay = Duration.zero,
+    this.animate = true,
   });
 
   @override
@@ -103,6 +108,7 @@ class _FadeSlideInState extends State<FadeSlideIn>
     _ctrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 500),
+      value: widget.animate ? 0 : 1,
     );
     _opacity = Tween<double>(begin: 0, end: 1).animate(
       CurvedAnimation(parent: _ctrl, curve: Curves.easeOut),
@@ -113,9 +119,11 @@ class _FadeSlideInState extends State<FadeSlideIn>
     ).animate(
       CurvedAnimation(parent: _ctrl, curve: Curves.easeOut),
     );
-    Future.delayed(widget.delay, () {
-      if (mounted) _ctrl.forward();
-    });
+    if (widget.animate) {
+      Future.delayed(widget.delay, () {
+        if (mounted) _ctrl.forward();
+      });
+    }
   }
 
   @override
@@ -129,6 +137,107 @@ class _FadeSlideInState extends State<FadeSlideIn>
     return FadeTransition(
       opacity: _opacity,
       child: SlideTransition(position: _slide, child: widget.child),
+    );
+  }
+}
+
+// ─── Skeleton loading placeholders ────────────────────────────────────────────
+/// Gently pulses its child; wrap a group of [SkeletonBox]es so they share
+/// one animation.
+class SkeletonPulse extends StatefulWidget {
+  final Widget child;
+
+  const SkeletonPulse({super.key, required this.child});
+
+  @override
+  State<SkeletonPulse> createState() => _SkeletonPulseState();
+}
+
+class _SkeletonPulseState extends State<SkeletonPulse>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat(reverse: true);
+
+  late final Animation<double> _opacity = Tween<double>(begin: 0.45, end: 1)
+      .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      FadeTransition(opacity: _opacity, child: widget.child);
+}
+
+class SkeletonBox extends StatelessWidget {
+  final double? width;
+  final double height;
+  final double radius;
+
+  const SkeletonBox({
+    super.key,
+    this.width,
+    required this.height,
+    this.radius = 8,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: C.surface2(dark),
+        borderRadius: BorderRadius.circular(radius),
+      ),
+    );
+  }
+}
+
+// ─── Initials avatar ──────────────────────────────────────────────────────────
+class InitialsAvatar extends StatelessWidget {
+  final String name;
+  final String gender;
+  final bool dark;
+  final double size;
+
+  const InitialsAvatar({
+    super.key,
+    required this.name,
+    required this.gender,
+    required this.dark,
+    this.size = 40,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final female = gender == 'F';
+    // A muted pink in dark mode; the light-mode pink glares on black.
+    final bg = female
+        ? (dark ? const Color(0x33D4537E) : const Color(0xFFFDE8F0))
+        : C.surface2(dark);
+    final fg = female
+        ? (dark ? const Color(0xFFED93B1) : const Color(0xFFD4537E))
+        : C.text2(dark);
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: bg),
+      alignment: Alignment.center,
+      child: Text(
+        initialsFor(name),
+        style: TextStyle(
+          fontSize: size * 0.33,
+          fontWeight: FontWeight.w700,
+          color: fg,
+        ),
+      ),
     );
   }
 }
@@ -239,4 +348,19 @@ String formatName(String raw) {
     }
   }
   return raw;
+}
+
+/// "Smith, John" → "JS". Falls back to "?" for an empty name.
+String initialsFor(String raw) {
+  final parts =
+      formatName(raw).split(' ').where((p) => p.isNotEmpty).toList();
+  if (parts.length >= 2) return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+  return parts.isNotEmpty ? parts[0][0].toUpperCase() : '?';
+}
+
+/// "2026-05-03" → "May 3".
+String formatShortMeetDate(DateTime d) {
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug',
+      'Sep', 'Oct', 'Nov', 'Dec'];
+  return '${months[d.month - 1]} ${d.day}';
 }

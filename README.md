@@ -93,6 +93,8 @@ pip install -r requirements.txt
 playwright install chromium
 # create .env with SUPABASE_URL and SUPABASE_KEY
 python3 scraper.py
+python3 scraper.py --ranks-only   # just refresh national/conference list ranks
+python3 scraper.py --dry-run      # print list ranks without saving anything
 ```
 
 ---

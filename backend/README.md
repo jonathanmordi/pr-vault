@@ -16,7 +16,8 @@ Or paste a migration file into the dashboard's SQL editor and run it.
 ## Access model
 
 - Every signed-in user can read only their own team's `teams`, `profiles`,
-  `track_prs`, `meet_appearances`, `school_records` and `lifting_maxes`.
+  `track_prs`, `meet_appearances`, `school_records`, `lifting_maxes` and
+  `list_ranks`.
 - Clients can write only their own `full_name` and their own `lifting_maxes`.
 - Joining a team (`join_team`) and claiming a scraped TFRRS profile
   (`claim_tfrrs_profile`) go through `SECURITY DEFINER` functions that

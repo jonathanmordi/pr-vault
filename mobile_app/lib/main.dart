@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'app_config.dart';
 import 'design_system.dart';
@@ -12,7 +13,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Supabase.initialize(
     url: AppConfig.supabaseUrl,
-    anonKey: AppConfig.supabaseAnonKey,
+    publishableKey: AppConfig.supabaseAnonKey,
   );
   runApp(const PRVaultApp());
 }
@@ -118,10 +119,12 @@ class AuthGate extends StatelessWidget {
     return StreamBuilder(
       stream: supabase.auth.onAuthStateChange,
       builder: (context, snapshot) {
-        if (snapshot.hasData) {
-          final session = snapshot.data!.session;
-          if (session != null) return const MainShell();
-        }
+        // Fall back to the restored session until the stream's first event
+        // arrives, so signed-in users don't see the login screen flash.
+        final session = snapshot.hasData
+            ? snapshot.data!.session
+            : supabase.auth.currentSession;
+        if (session != null) return const MainShell();
         return const LoginScreen();
       },
     );
@@ -139,13 +142,26 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
 
-  /// Each tab reuses these persistent screen instances.
-  final List<Widget> _screens = const [
+  /// Tabs are built the first time they're opened and then kept alive, so
+  /// switching back is instant instead of refetching behind a spinner.
+  final Set<int> _visited = {0};
+
+  static const List<Widget> _screens = [
     LeaderboardScreen(),
     ProfileScreen(),
     MaxesScreen(),
     SettingsScreen(),
   ];
+
+  void _select(int i) {
+    if (i == _currentIndex) return;
+    HapticFeedback.selectionClick();
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() {
+      _currentIndex = i;
+      _visited.add(i);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -153,19 +169,49 @@ class _MainShellState extends State<MainShell> {
     return Scaffold(
       backgroundColor: C.bg(dark),
       body: Stack(
+        fit: StackFit.expand,
         children: [
-          _screens[_currentIndex],
+          for (var i = 0; i < _screens.length; i++)
+            _TabPage(
+              key: ValueKey(i),
+              active: i == _currentIndex,
+              child: _visited.contains(i) ? _screens[i] : const SizedBox(),
+            ),
           Positioned(
             left: 24,
             right: 24,
             bottom: 32,
             child: _FloatingNav(
               currentIndex: _currentIndex,
-              onTap: (i) => setState(() => _currentIndex = i),
+              onTap: _select,
               dark: dark,
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Cross-fades between tabs. Hidden tabs keep their state but don't take
+/// taps or run animations.
+class _TabPage extends StatelessWidget {
+  final bool active;
+  final Widget child;
+
+  const _TabPage({super.key, required this.active, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    // TickerMode must sit inside the fade: wrapped around it, it paused the
+    // fade-out itself, leaving the old tab fully visible on top.
+    return IgnorePointer(
+      ignoring: !active,
+      child: AnimatedOpacity(
+        opacity: active ? 1 : 0,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+        child: TickerMode(enabled: active, child: child),
       ),
     );
   }
@@ -663,26 +709,40 @@ class _NavItem extends StatelessWidget {
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              active ? activeIcon : icon,
-              size: 22,
-              color: active ? C.accent : C.text3(dark),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight:
-                    active ? FontWeight.w600 : FontWeight.w400,
-                color: active ? C.accent : C.text3(dark),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 250),
+          curve: kSpring,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(
+            color: active ? C.accentSoft(dark) : Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AnimatedScale(
+                scale: active ? 1.08 : 1.0,
+                duration: const Duration(milliseconds: 250),
+                curve: kSpring,
+                child: Icon(
+                  active ? activeIcon : icon,
+                  size: 22,
+                  color: active ? C.accent : C.text3(dark),
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight:
+                      active ? FontWeight.w600 : FontWeight.w400,
+                  color: active ? C.accent : C.text3(dark),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
