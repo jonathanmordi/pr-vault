@@ -1,14 +1,12 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'design_system.dart';
+import 'pr_stats.dart';
+import 'team_data.dart';
 
 final _supabase = Supabase.instance.client;
-
-const _fieldEvents = [
-  'High Jump', 'Long Jump', 'Triple Jump', 'Pole Vault',
-  'Shot Put', 'Discus', 'Hammer', 'Javelin', 'Weight Throw',
-  'Decathlon', 'Heptathlon', 'Pentathlon',
-];
 
 class AthleteProfileScreen extends StatefulWidget {
   final String athleteId;
@@ -33,59 +31,89 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
   List<Map<String, dynamic>> _appearances = [];
   List<Map<String, dynamic>> _records = [];
   List<Map<String, dynamic>> _maxes = [];
+  TeamSnapshot? _team;
   bool _loading = true;
+  String? _error;
   String? _selectedEvent;
 
   @override
   void initState() {
     super.initState();
+    _team = TeamData.instance.cached;
     _load();
   }
 
   Future<void> _load() async {
-    final prs = await _supabase
-        .from('track_prs')
-        .select()
-        .eq('athlete_id', widget.athleteId)
-        .order('event');
+    // Team data (for rivals and points) is usually cached already; it never
+    // holds up the rest of the profile.
+    TeamData.instance.load().then((team) {
+      if (mounted) setState(() => _team = team);
+    }).catchError((_) {});
 
-    final appearances = await _supabase
-        .from('meet_appearances')
-        .select()
-        .eq('athlete_id', widget.athleteId)
-        .order('meet_date', ascending: true);
-
-    final records = await _supabase
-        .from('school_records')
-        .select()
-        .eq('gender', widget.gender);
-
-    final maxes = await _supabase
-        .from('lifting_maxes')
-        .select('lift_type, weight_lbs')
-        .eq('athlete_id', widget.athleteId)
-        .order('lift_type');
-
-    setState(() {
-      _prs = List<Map<String, dynamic>>.from(prs);
-      _appearances = List<Map<String, dynamic>>.from(appearances);
-      _records = List<Map<String, dynamic>>.from(records);
-      _maxes = List<Map<String, dynamic>>.from(maxes);
-      _loading = false;
-      if (_prs.isNotEmpty) {
-        _selectedEvent = _prs.first['event'];
-      }
-    });
-  }
-
-  String _initials(String name) {
-    final formatted = formatName(name);
-    final parts = formatted.split(' ');
-    if (parts.length >= 2) {
-      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+    try {
+      // Independent queries, so fetch them in parallel.
+      final results = await Future.wait([
+        _supabase
+            .from('track_prs')
+            .select()
+            .eq('athlete_id', widget.athleteId)
+            .order('event'),
+        _supabase
+            .from('meet_appearances')
+            .select()
+            .eq('athlete_id', widget.athleteId)
+            .order('meet_date', ascending: true),
+        _supabase.from('school_records').select().eq('gender', widget.gender),
+        _supabase
+            .from('lifting_maxes')
+            .select('lift_type, weight_lbs')
+            .eq('athlete_id', widget.athleteId)
+            .order('lift_type'),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _prs = results[0];
+        _appearances = results[1];
+        _records = results[2];
+        _maxes = results[3];
+        _loading = false;
+        _error = null;
+        if (_prs.isNotEmpty) {
+          _selectedEvent ??= _prs.first['event'];
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = "Couldn't load this profile.";
+      });
     }
-    return formatted.isNotEmpty ? formatted[0].toUpperCase() : '?';
   }
+
+  void _retry() {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    _load();
+  }
+
+  void _openAthlete(String athleteId) {
+    final team = _team!;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AthleteProfileScreen(
+          athleteId: athleteId,
+          athleteName: team.nameOf(athleteId),
+          gender: team.genderOf(athleteId),
+        ),
+      ),
+    );
+  }
+
+  String _initials(String name) => initialsFor(name);
 
   double get _bestImprovement => _prs.fold(0.0, (m, pr) {
         final d = (pr['improvement_delta_pct'] as num? ?? 0.0).toDouble();
@@ -97,7 +125,7 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
         .where((a) => a['event'] == event && a['meet_date'] != null)
         .toList();
 
-    final isField = _fieldEvents.contains(event);
+    final isField = isFieldEvent(event);
     final points = <ChartPoint>[];
 
     for (final a in data) {
@@ -138,7 +166,7 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
   }
 
   String _recordGapText(Map<String, dynamic> pr, Map<String, dynamic> record) {
-    final isField = _fieldEvents.contains(pr['event']);
+    final isField = isFieldEvent(pr['event']);
 
     if (isField) {
       final prMark = (pr['best_mark_meters'] as num?)?.toDouble() ?? 0;
@@ -156,14 +184,14 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
       if (gap >= 60) {
         final m = gap ~/ 60;
         final s = (gap % 60).toStringAsFixed(2);
-        return '${m}:${s.padLeft(5, '0')} off record (${record['record_display']}, ${record['holder_name']} \'${(record['year_set'] ?? 0) % 100})';
+        return '$m:${s.padLeft(5, '0')} off record (${record['record_display']}, ${record['holder_name']} \'${(record['year_set'] ?? 0) % 100})';
       }
       return '${gap.toStringAsFixed(2)}s off record (${record['record_display']}, ${record['holder_name']} \'${(record['year_set'] ?? 0) % 100})';
     }
   }
 
   double _recordPercentage(Map<String, dynamic> pr, Map<String, dynamic> record) {
-    final isField = _fieldEvents.contains(pr['event']);
+    final isField = isFieldEvent(pr['event']);
     if (isField) {
       final prMark = (pr['best_mark_meters'] as num?)?.toDouble() ?? 0;
       final recMark = (record['record_mark_meters'] as num?)?.toDouble() ?? 1;
@@ -185,10 +213,9 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
 
     return Scaffold(
       backgroundColor: C.bg(dark),
-      body: _loading
-          ? const Center(
-              child: CircularProgressIndicator(color: C.accent, strokeWidth: 2))
-          : CustomScrollView(
+      // The header renders straight away from what the caller passed in;
+      // only the sections below it wait on the network.
+      body: CustomScrollView(
               slivers: [
                 SliverAppBar(
                   backgroundColor: C.bg(dark),
@@ -287,7 +314,8 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                                       Wrap(
                                         spacing: 8,
                                         children: [
-                                          _pill('${_prs.length} PRs', C.accentSoft(dark), C.accent),
+                                          if (!_loading)
+                                            _pill('${_prs.length} PRs', C.accentSoft(dark), C.accent),
                                           _pill(isFemale ? 'Women' : 'Men', C.surface2(dark), C.text2(dark)),
                                         ],
                                       ),
@@ -300,6 +328,11 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                         ),
                         const SizedBox(height: 16),
 
+                        if (_loading)
+                          _buildSkeleton()
+                        else if (_error != null)
+                          _buildError(dark)
+                        else ...[
                         // Stats row
                         FadeSlideIn(
                           delay: const Duration(milliseconds: 60),
@@ -330,6 +363,19 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                                   label: 'Meets',
                                   value: '${_appearances.map((a) => a['meet_name']).toSet().length}',
                                   icon: Icons.calendar_today_outlined,
+                                  dark: dark,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _miniStat(
+                                  label: _team == null
+                                      ? 'Points'
+                                      : '${_team!.currentSeason.shortLabel} pts',
+                                  value: _team == null
+                                      ? '—'
+                                      : '${_team!.pointsFor(widget.athleteId, _team!.currentSeason)}',
+                                  icon: Icons.bolt_outlined,
                                   dark: dark,
                                 ),
                               ),
@@ -365,7 +411,11 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                                       return Padding(
                                         padding: const EdgeInsets.only(right: 8),
                                         child: GestureDetector(
-                                          onTap: () => setState(() => _selectedEvent = event),
+                                          onTap: () {
+                                            if (sel) return;
+                                            HapticFeedback.selectionClick();
+                                            setState(() => _selectedEvent = event);
+                                          },
                                           child: AnimatedContainer(
                                             duration: const Duration(milliseconds: 200),
                                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -392,10 +442,25 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                                   GlassCard(
                                     forceDark: dark,
                                     padding: const EdgeInsets.all(20),
-                                    child: InteractiveTrendChart(
-                                      points: _chartPointsForEvent(_selectedEvent!),
-                                      isField: _fieldEvents.contains(_selectedEvent),
-                                      dark: dark,
+                                    // Cross-fade and resize when switching
+                                    // events instead of jumping.
+                                    child: AnimatedSize(
+                                      duration: const Duration(milliseconds: 250),
+                                      curve: kSpring,
+                                      alignment: Alignment.topCenter,
+                                      child: AnimatedSwitcher(
+                                        duration: const Duration(milliseconds: 220),
+                                        layoutBuilder: (current, previous) => Stack(
+                                          alignment: Alignment.topCenter,
+                                          children: [...previous, ?current],
+                                        ),
+                                        child: InteractiveTrendChart(
+                                          key: ValueKey(_selectedEvent),
+                                          points: _chartPointsForEvent(_selectedEvent!),
+                                          isField: isFieldEvent(_selectedEvent!),
+                                          dark: dark,
+                                        ),
+                                      ),
                                     ),
                                   ),
                               ],
@@ -439,6 +504,50 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                           ),
                         ),
                         const SizedBox(height: 28),
+
+                        // Rivals
+                        if (_rivals.isNotEmpty) ...[
+                          FadeSlideIn(
+                            delay: const Duration(milliseconds: 195),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'RIVALS',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: C.text3(dark),
+                                    letterSpacing: 0.06 * 13,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Closest teammate PR in each event',
+                                  style: TextStyle(fontSize: 12, color: C.text3(dark)),
+                                ),
+                                const SizedBox(height: 12),
+                                GlassCard(
+                                  forceDark: dark,
+                                  child: Column(
+                                    children: _rivals.asMap().entries.map((entry) {
+                                      final rival = entry.value;
+                                      return _RivalRow(
+                                        rival: rival,
+                                        name: _team!.nameOf(rival.athleteId),
+                                        gender: _team!.genderOf(rival.athleteId),
+                                        isLast: entry.key == _rivals.length - 1,
+                                        dark: dark,
+                                        onTap: () => _openAthlete(rival.athleteId),
+                                      );
+                                    }).toList(),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 28),
+                        ],
 
                         // Lifting Maxes
                         if (_maxes.isNotEmpty) ...[
@@ -526,6 +635,7 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                             ],
                           ),
                         ),
+                        ],
                         const SizedBox(height: 120),
                       ],
                     ),
@@ -533,6 +643,70 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                 ),
               ],
             ),
+    );
+  }
+
+  /// Closest teammates, nearest first.
+  List<Rival> get _rivals {
+    final team = _team;
+    if (team == null) return const [];
+    return team.rivalsOf(widget.athleteId).values.toList()
+      ..sort((a, b) => a.gapPct.compareTo(b.gapPct));
+  }
+
+  Widget _buildSkeleton() {
+    return SkeletonPulse(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              for (var i = 0; i < 4; i++) ...[
+                if (i > 0) const SizedBox(width: 10),
+                const Expanded(child: SkeletonBox(height: 78, radius: 16)),
+              ],
+            ],
+          ),
+          const SizedBox(height: 28),
+          const SkeletonBox(width: 110, height: 12),
+          const SizedBox(height: 12),
+          const SkeletonBox(height: 280, radius: 16),
+          const SizedBox(height: 28),
+          const SkeletonBox(width: 150, height: 12),
+          const SizedBox(height: 12),
+          const SkeletonBox(height: 200, radius: 16),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildError(bool dark) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 40),
+      child: Center(
+        child: Column(
+          children: [
+            Icon(Icons.cloud_off_outlined, size: 40, color: C.text3(dark)),
+            const SizedBox(height: 12),
+            Text(_error!, style: TextStyle(fontSize: 15, color: C.text3(dark))),
+            const SizedBox(height: 16),
+            PressScale(
+              onTap: _retry,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                decoration: BoxDecoration(
+                  color: C.accent,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'Try again',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -748,30 +922,40 @@ class _InteractiveTrendChartState extends State<InteractiveTrendChart> {
                 positions.add(Offset(x, y));
               }
 
+              // Horizontal drags scrub the chart; vertical ones still
+              // scroll the page.
               return GestureDetector(
                 onLongPressStart: (d) => _updateActive(d.localPosition.dx, positions),
                 onLongPressMoveUpdate: (d) => _updateActive(d.localPosition.dx, positions),
                 onLongPressEnd: (_) => setState(() => _activeIndex = null),
-                onPanStart: (d) => _updateActive(d.localPosition.dx, positions),
-                onPanUpdate: (d) => _updateActive(d.localPosition.dx, positions),
-                onPanEnd: (_) => setState(() => _activeIndex = null),
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    CustomPaint(
-                      size: Size(chartWidth, topPad + chartHeight + botPad),
-                      painter: _TrendLinePainter(
-                        positions: positions,
-                        values: values,
-                        prValue: prValue,
-                        isField: isField,
-                        dark: dark,
-                        activeIndex: _activeIndex,
+                onHorizontalDragStart: (d) => _updateActive(d.localPosition.dx, positions),
+                onHorizontalDragUpdate: (d) => _updateActive(d.localPosition.dx, positions),
+                onHorizontalDragEnd: (_) => setState(() => _activeIndex = null),
+                onHorizontalDragCancel: () => setState(() => _activeIndex = null),
+                child: TweenAnimationBuilder<double>(
+                  // Draw the line in from left to right on first show.
+                  tween: Tween(begin: 0, end: 1),
+                  duration: const Duration(milliseconds: 700),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, progress, _) => Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      CustomPaint(
+                        size: Size(chartWidth, topPad + chartHeight + botPad),
+                        painter: _TrendLinePainter(
+                          positions: positions,
+                          values: values,
+                          prValue: prValue,
+                          isField: isField,
+                          dark: dark,
+                          activeIndex: _activeIndex,
+                          progress: progress,
+                        ),
                       ),
-                    ),
-                    if (_activeIndex != null && _activeIndex! < points.length)
-                      _buildCallout(positions[_activeIndex!], points[_activeIndex!], chartWidth, dark),
-                  ],
+                      if (_activeIndex != null && _activeIndex! < points.length)
+                        _buildCallout(positions[_activeIndex!], points[_activeIndex!], chartWidth, dark),
+                    ],
+                  ),
                 ),
               );
             },
@@ -804,6 +988,7 @@ class _InteractiveTrendChartState extends State<InteractiveTrendChart> {
       }
     }
     if (_activeIndex != closest) {
+      HapticFeedback.selectionClick();
       setState(() => _activeIndex = closest);
     }
   }
@@ -953,6 +1138,9 @@ class _TrendLinePainter extends CustomPainter {
   final bool dark;
   final int? activeIndex;
 
+  /// 0–1 left-to-right reveal used for the draw-in animation.
+  final double progress;
+
   _TrendLinePainter({
     required this.positions,
     required this.values,
@@ -960,11 +1148,16 @@ class _TrendLinePainter extends CustomPainter {
     required this.isField,
     required this.dark,
     this.activeIndex,
+    this.progress = 1,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     if (positions.length < 2) return;
+
+    // Pad the reveal so dots on the edges aren't clipped once it's done.
+    canvas.clipRect(Rect.fromLTRB(
+        -8, -8, -8 + (size.width + 16) * progress, size.height + 8));
 
     final prIdx = values.indexOf(prValue);
     if (prIdx >= 0) {
@@ -1052,8 +1245,96 @@ class _TrendLinePainter extends CustomPainter {
     }
   }
 
+  // Comparing only activeIndex left the previous event's line on screen
+  // after switching events, since the touch point was null both times.
   @override
-  bool shouldRepaint(_TrendLinePainter old) => old.activeIndex != activeIndex;
+  bool shouldRepaint(_TrendLinePainter old) =>
+      old.activeIndex != activeIndex ||
+      old.progress != progress ||
+      old.dark != dark ||
+      old.prValue != prValue ||
+      !listEquals(old.positions, positions) ||
+      !listEquals(old.values, values);
+}
+
+// ─── Rival row ──────────────────────────────────────────────────────────────
+
+class _RivalRow extends StatelessWidget {
+  final Rival rival;
+  final String name;
+  final String gender;
+  final bool isLast;
+  final bool dark;
+  final VoidCallback onTap;
+
+  const _RivalRow({
+    required this.rival,
+    required this.name,
+    required this.gender,
+    required this.isLast,
+    required this.dark,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return PressScale(
+      pressedScale: 0.98,
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+        decoration: BoxDecoration(
+          color: Colors.transparent,
+          border: isLast
+              ? null
+              : Border(bottom: BorderSide(color: C.border(dark), width: 0.5)),
+        ),
+        child: Row(
+          children: [
+            InitialsAvatar(name: name, gender: gender, dark: dark),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    formatName(name),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: C.text1(dark)),
+                  ),
+                  Text(
+                    '${rival.event} · ${rival.theirDisplay}',
+                    style: TextStyle(fontSize: 11, color: C.text3(dark)),
+                  ),
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  formatGap(rival.event, rival.gap),
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.4,
+                    color: rival.isAhead ? C.accent : C.text1(dark),
+                  ),
+                ),
+                Text(
+                  rival.isAhead ? 'to catch' : 'ahead',
+                  style: TextStyle(fontSize: 10, color: C.text3(dark)),
+                ),
+              ],
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.chevron_right, size: 14, color: C.text3(dark)),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // ─── PR Row ─────────────────────────────────────────────────────────────────

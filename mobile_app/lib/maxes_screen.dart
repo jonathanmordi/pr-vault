@@ -16,11 +16,16 @@ class MaxesScreen extends StatefulWidget {
 
 class _MaxesScreenState extends State<MaxesScreen> {
   String _selectedLift = 'Squat';
-  List<Map<String, dynamic>> _leaderboard = [];
+  // Every lift for the team, so switching lifts is instant.
+  List<Map<String, dynamic>> _allMaxes = [];
   bool _loading = true;
+  bool _animateRows = true;
   String? _myId;
   String? _myTeamId;
   int? _deletingIndex;
+
+  List<Map<String, dynamic>> get _leaderboard =>
+      _allMaxes.where((m) => m['lift_type'] == _selectedLift).toList();
 
   @override
   void initState() {
@@ -42,22 +47,29 @@ class _MaxesScreenState extends State<MaxesScreen> {
   }
 
   Future<void> _loadMaxes() async {
-    setState(() => _loading = true);
     try {
-      final data = await _supabase
+      var query = _supabase
           .from('lifting_maxes')
-          .select('weight_lbs, athlete_id, profiles!inner(full_name)')
-          .eq('lift_type', _selectedLift)
-          .eq('team_id', _myTeamId ?? '')
-          .order('weight_lbs', ascending: false);
-
+          .select('weight_lbs, lift_type, athlete_id, profiles!inner(full_name)');
+      if (_myTeamId != null) query = query.eq('team_id', _myTeamId!);
+      final data = await query.order('weight_lbs', ascending: false);
+      if (!mounted) return;
       setState(() {
-        _leaderboard = List<Map<String, dynamic>>.from(data);
+        _allMaxes = List<Map<String, dynamic>>.from(data);
         _loading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => _loading = false);
     }
+    // Only the first screenful of the first load gets the entrance stagger.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _animateRows = false);
+  }
+
+  void _selectLift(String lift) {
+    if (lift == _selectedLift) return;
+    HapticFeedback.selectionClick();
+    setState(() => _selectedLift = lift);
   }
 
   void _showEntrySheet() {
@@ -68,6 +80,7 @@ class _MaxesScreenState extends State<MaxesScreen> {
       builder: (_) => _MaxEntrySheet(
         teamId: _myTeamId ?? '',
         athleteId: _myId ?? '',
+        initialLift: _selectedLift,
         onSaved: () {
           _loadMaxes();
         },
@@ -148,9 +161,15 @@ void _confirmDelete(Map<String, dynamic> entry, int index) {
                             .eq('athlete_id', _myId!)
                             .eq('lift_type', liftType);
                       } catch (e) {
-                        print('Delete error: $e');
+                        debugPrint('Delete error: $e');
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text("Couldn't delete that max. Try again.")),
+                          );
+                        }
                       }
-                      
+
+                      if (!mounted) return;
                       setState(() => _deletingIndex = null);
                       await _loadMaxes();
                     },
@@ -240,15 +259,12 @@ void _confirmDelete(Map<String, dynamic> entry, int index) {
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical : 3),
                 itemCount: _liftTypes.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                separatorBuilder: (_, _) => const SizedBox(width: 8),
                 itemBuilder: (context, i) {
                   final lift = _liftTypes[i];
                   final selected = lift == _selectedLift;
                   return GestureDetector(
-                    onTap: () {
-                      setState(() => _selectedLift = lift);
-                      _loadMaxes();
-                    },
+                    onTap: () => _selectLift(lift),
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
                       padding: const EdgeInsets.symmetric(
@@ -278,75 +294,99 @@ void _confirmDelete(Map<String, dynamic> entry, int index) {
               child: _loading
                   ? const Center(
                       child: CircularProgressIndicator(color: C.accent))
-                  : _leaderboard.isEmpty
-                      ? Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.fitness_center,
-                                  size: 48, color: C.text3(dark)),
-                              const SizedBox(height: 12),
-                              Text(
-                                'No $_selectedLift maxes yet',
-                                style: TextStyle(
-                                    fontSize: 15, color: C.text3(dark)),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Tap "Log Max" to be the first',
-                                style: TextStyle(
-                                    fontSize: 13, color: C.text3(dark)),
-                              ),
-                            ],
-                          ),
-                        )
-                      : RefreshIndicator(
-                          color: C.accent,
-                          onRefresh: _loadMaxes,
-                          child: ListView.builder(
-                            padding: const EdgeInsets.fromLTRB(
-                                20, 0, 20, 120),
-                            itemCount: _leaderboard.length,
-                            itemBuilder: (context, i) {
-                              final entry = _leaderboard[i];
-                              final name = formatName(
-                                  entry['profiles']?['full_name'] ?? '—');
-                              final weight = entry['weight_lbs'] as int;
-                              final isMe = entry['athlete_id'] == _myId;
-                              final rank = i + 1;
-
-                              final isDeleting = _deletingIndex == i;
-                              return FadeSlideIn(
-                                delay: Duration(milliseconds: i * 40),
-                                child: AnimatedSlide(
-                                  duration: const Duration(milliseconds: 300),
-                                  curve: Curves.easeInBack,
-                                  offset: isDeleting ? const Offset(1.0, 0) : Offset.zero,
-                                  child: AnimatedOpacity(
-                                    duration: const Duration(milliseconds: 250),
-                                    opacity: isDeleting ? 0.0 : 1.0,
-                                    child: GestureDetector(
-                                      onLongPress: isMe ? () {
-                                        _confirmDelete(entry, i);
-                                      } : null,
-                                      child: _MaxRow(
-                                        rank: rank,
-                                        name: name,
-                                        weight: weight,
-                                        isMe: isMe,
-                                        dark: dark,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
+                  : RefreshIndicator(
+                      color: C.accent,
+                      onRefresh: () {
+                        HapticFeedback.lightImpact();
+                        return _loadMaxes();
+                      },
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 180),
+                        layoutBuilder: (current, previous) => Stack(
+                          alignment: Alignment.topCenter,
+                          children: [...previous, ?current],
                         ),
+                        child: KeyedSubtree(
+                          key: ValueKey(_selectedLift),
+                          child: _buildList(dark),
+                        ),
+                      ),
+                    ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildList(bool dark) {
+    const physics =
+        AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics());
+    final leaderboard = _leaderboard;
+
+    if (leaderboard.isEmpty) {
+      // Scrollable so pull-to-refresh still works with nothing logged.
+      return ListView(
+        physics: physics,
+        children: [
+          const SizedBox(height: 120),
+          Icon(Icons.fitness_center, size: 48, color: C.text3(dark)),
+          const SizedBox(height: 12),
+          Text(
+            'No $_selectedLift maxes yet',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 15, color: C.text3(dark)),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Tap "Log Max" to be the first',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: C.text3(dark)),
+          ),
+        ],
+      );
+    }
+
+    return ListView.builder(
+      physics: physics,
+      padding: const EdgeInsets.fromLTRB(
+          20, 0, 20, 120),
+      itemCount: leaderboard.length,
+      itemBuilder: (context, i) {
+        final entry = leaderboard[i];
+        final name = formatName(
+            entry['profiles']?['full_name'] ?? '—');
+        final weight = entry['weight_lbs'] as int;
+        final isMe = entry['athlete_id'] == _myId;
+        final rank = i + 1;
+
+        final isDeleting = _deletingIndex == i;
+        return FadeSlideIn(
+          animate: _animateRows && i < 12,
+          delay: Duration(milliseconds: i * 40),
+          child: AnimatedSlide(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInBack,
+            offset: isDeleting ? const Offset(1.0, 0) : Offset.zero,
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 250),
+              opacity: isDeleting ? 0.0 : 1.0,
+              child: GestureDetector(
+                onLongPress: isMe ? () {
+                  _confirmDelete(entry, i);
+                } : null,
+                child: _MaxRow(
+                  rank: rank,
+                  name: name,
+                  weight: weight,
+                  isMe: isMe,
+                  dark: dark,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -442,11 +482,13 @@ class _MaxRow extends StatelessWidget {
 class _MaxEntrySheet extends StatefulWidget {
   final String teamId;
   final String athleteId;
+  final String initialLift;
   final VoidCallback onSaved;
 
   const _MaxEntrySheet({
     required this.teamId,
     required this.athleteId,
+    required this.initialLift,
     required this.onSaved,
   });
 
@@ -455,7 +497,7 @@ class _MaxEntrySheet extends StatefulWidget {
 }
 
 class _MaxEntrySheetState extends State<_MaxEntrySheet> {
-  String _lift = 'Squat';
+  late String _lift = widget.initialLift;
   final _weightCtrl = TextEditingController();
   bool _saving = false;
 

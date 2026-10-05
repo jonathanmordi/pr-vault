@@ -30,4 +30,19 @@ void main() {
       expect(formatName('Smith-Jones, Mary Ann'), 'Mary Ann Smith-Jones');
     });
   });
+
+  group('initialsFor', () {
+    test('uses first and last initials of the display name', () {
+      expect(initialsFor('Smith, John'), 'JS');
+    });
+
+    test('ignores stray spaces instead of crashing', () {
+      expect(initialsFor('John  Smith'), 'JS');
+    });
+
+    test('handles single and empty names', () {
+      expect(initialsFor('cher'), 'C');
+      expect(initialsFor(''), '?');
+    });
+  });
 }
