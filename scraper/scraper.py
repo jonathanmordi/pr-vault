@@ -427,13 +427,33 @@ def parse_place(raw: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def parse_list_year(selected_list: str | None, meet_dates: list[str]) -> int | None:
-    """Season year from the list picker ('... Outdoor List (2026)'), falling
-    back to the latest meet date on the list."""
-    m = re.search(r'\((\d{4})\)\s*$', (selected_list or '').strip())
-    if m:
-        return int(m.group(1))
-    years = [int(d[:4]) for d in (parse_meet_date(x) for x in meet_dates if x.strip()) if d]
+def parse_list_year(names: list[str | None], meet_dates: list[str], season: str) -> int | None:
+    """The season a list belongs to. Indoor seasons are named for the spring
+    they end in, so the 2025-26 indoor list is 2026.
+
+    Tries each name in turn ('MAC Indoor List (2026)', '2025-2026 NCAA Division
+    III Indoor List', '2026 NCAA Division III Outdoor Qualifying'), then falls
+    back to the latest meet date, where an Aug-Dec indoor meet counts toward
+    the next year. Getting this wrong would overwrite last season's ranks.
+    """
+    for name in names:
+        name = (name or '').strip()
+        m = re.search(r'\((\d{4})\)\s*$', name)
+        if m:
+            return int(m.group(1))
+        m = re.search(r'(?<!\d)(\d{4})\s*[-_–]\s*(\d{4})(?!\d)', name)
+        if m:
+            return int(m.group(2))
+        m = re.search(r'(?<!\d)(20\d{2})(?!\d)', name)
+        if m:
+            return int(m.group(1))
+
+    years = []
+    for raw in meet_dates:
+        d = parse_meet_date(raw) if raw.strip() else None
+        if d:
+            year, month = int(d[:4]), int(d[5:7])
+            years.append(year + 1 if season == 'indoor' and month >= 8 else year)
     return max(years) if years else None
 
 
@@ -530,7 +550,7 @@ def find_rank_lists(page, conference):
     return found
 
 
-def scrape_list(page, url):
+def scrape_list(page, url, season):
     """Loads a TFRRS performance list at its deepest setting, both genders.
     Returns (list name, season year, event blocks)."""
     page.goto(url, wait_until="domcontentloaded")
@@ -554,7 +574,7 @@ def scrape_list(page, url):
         "select[name=other_lists]", "s => s.options[s.selectedIndex]?.text || ''")
     name = page.title().replace('TFRRS |', '').strip()
     dates = [r['date'] for b in blocks for r in b['rows']]
-    return name, parse_list_year(selected, dates), blocks
+    return name, parse_list_year([selected, name], dates, season), blocks
 
 
 def load_roster(team_id):
@@ -575,7 +595,7 @@ def scrape_list_ranks(page, team_id, conference, dry_run=False):
 
     for info in find_rank_lists(page, conference):
         try:
-            name, year, blocks = scrape_list(page, info["url"])
+            name, year, blocks = scrape_list(page, info["url"], info["season"])
             if year is None:
                 print(f"  WARNING: couldn't tell which season {info['url']} is; skipping")
                 continue

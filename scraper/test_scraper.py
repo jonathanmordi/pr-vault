@@ -197,14 +197,31 @@ class TestParsePlace:
 
 
 class TestParseListYear:
-    def test_reads_year_from_list_picker(self):
-        assert parse_list_year("Middle Atlantic Conference Outdoor List (2026)", []) == 2026
+    @pytest.mark.parametrize("name,season,expected", [
+        # Conference lists put the year at the end
+        ("Middle Atlantic Conference Indoor Performance List (2026)", "indoor", 2026),
+        # NCAA indoor lists span two years: the season is the spring one
+        ("2025-2026 NCAA Division III Indoor List", "indoor", 2026),
+        ("2025_2026_NCAA_Division_III_Indoor_List_FINAL", "indoor", 2026),
+        ("2026 NCAA Division III Outdoor Qualifying", "outdoor", 2026),
+    ])
+    def test_reads_year_from_name(self, name, season, expected):
+        assert parse_list_year([name], [], season) == expected
 
-    def test_falls_back_to_latest_meet_date(self):
-        assert parse_list_year("", ["Jan 10, 2026", "Feb 27-28, 2026", "Dec 6, 2025"]) == 2026
+    def test_next_indoor_season_never_reuses_last_years_label(self):
+        # Early in the 2026-27 indoor season: a yearless name and only
+        # December meets. Must be 2027, or it would overwrite indoor 2026.
+        assert parse_list_year(["Indoor List"], ["Dec 5, 2026", "Dec 12, 2026"], "indoor") == 2027
+        assert parse_list_year([None], ["Feb 27-28, 2027", "Dec 5, 2026"], "indoor") == 2027
+
+    def test_outdoor_falls_back_to_latest_meet_year(self):
+        assert parse_list_year([""], ["Mar 21, 2026", "May 2, 2026"], "outdoor") == 2026
+
+    def test_tries_each_name(self):
+        assert parse_list_year(["", "2026 NCAA Division III Outdoor Qualifying (FINAL)"], [], "outdoor") == 2026
 
     def test_unknown(self):
-        assert parse_list_year(None, ["", "  "]) is None
+        assert parse_list_year([None], ["", "  "], "outdoor") is None
 
 
 class TestPickListUrl:
