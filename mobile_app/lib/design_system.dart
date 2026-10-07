@@ -469,6 +469,118 @@ class _SegmentToggleState extends State<SegmentToggle> {
   }
 }
 
+// ─── Input field ──────────────────────────────────────────────────────────────
+
+/// Rounded text field with a leading icon, used on the sign-in and
+/// onboarding screens.
+class InputField extends StatelessWidget {
+  final TextEditingController controller;
+  final String hint;
+  final IconData icon;
+  final bool dark;
+  final bool obscure;
+  final TextInputType? keyboardType;
+  final Iterable<String>? autofillHints;
+  final ValueChanged<String>? onChanged;
+
+  const InputField({
+    super.key,
+    required this.controller,
+    required this.hint,
+    required this.icon,
+    required this.dark,
+    this.obscure = false,
+    this.keyboardType,
+    this.autofillHints,
+    this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 52,
+      decoration: BoxDecoration(
+        color: C.surface(dark),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: C.border(dark)),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(width: 16),
+          Icon(icon, size: 18, color: C.text3(dark)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              obscureText: obscure,
+              keyboardType: keyboardType,
+              autofillHints: autofillHints,
+              onChanged: onChanged,
+              style: TextStyle(fontSize: 15, color: C.text1(dark)),
+              decoration: InputDecoration(
+                hintText: hint,
+                hintStyle: TextStyle(color: C.text3(dark), fontSize: 15),
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Primary button ───────────────────────────────────────────────────────────
+
+/// Full-width red gradient button. Shows a spinner and ignores taps while
+/// [loading].
+class PrimaryButton extends StatelessWidget {
+  final String label;
+  final bool loading;
+  final VoidCallback onTap;
+  final bool dark;
+
+  const PrimaryButton({
+    super.key,
+    required this.label,
+    required this.onTap,
+    required this.dark,
+    this.loading = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return PressScale(
+      onTap: loading ? () {} : onTap,
+      child: Container(
+        height: 52,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(colors: [C.accentOf(dark), C.accentAlt]),
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: const [
+            BoxShadow(color: Color(0x4DB80C09), blurRadius: 20, offset: Offset(0, 6)),
+          ],
+        ),
+        child: Center(
+          child: loading
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                )
+              : Text(
+                  label,
+                  style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+        ),
+      ),
+    );
+  }
+}
+
 // ─── Custom toggle ────────────────────────────────────────────────────────────
 class CustomToggle extends StatelessWidget {
   final bool value;
