@@ -484,35 +484,24 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                         // Personal Records
                         FadeSlideIn(
                           delay: const Duration(milliseconds: 180),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'PERSONAL RECORDS',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: C.text3(dark),
-                                  letterSpacing: 0.06 * 13,
-                                ),
+                          child: _FoldableSection(
+                            title: 'PERSONAL RECORDS',
+                            dark: dark,
+                            child: GlassCard(
+                              forceDark: dark,
+                              child: Column(
+                                children: _prs.asMap().entries.map((entry) {
+                                  final i = entry.key;
+                                  final pr = entry.value;
+                                  final isLast = i == _prs.length - 1;
+                                  final delta = (pr['improvement_delta_pct'] as num? ?? 0.0);
+                                  final record = _getRecordForPR(pr);
+                                  final gapText = record != null ? _recordGapText(pr, record) : null;
+                                  final pct = record != null ? _recordPercentage(pr, record) : null;
+                                  return _PRRow(pr: pr, isLast: isLast, delta: delta, dark: dark, recordGapText: gapText, recordPct: pct, ranks: _ranks[pr['event']] ?? const []);
+                                }).toList(),
                               ),
-                              const SizedBox(height: 12),
-                              GlassCard(
-                                forceDark: dark,
-                                child: Column(
-                                  children: _prs.asMap().entries.map((entry) {
-                                    final i = entry.key;
-                                    final pr = entry.value;
-                                    final isLast = i == _prs.length - 1;
-                                    final delta = (pr['improvement_delta_pct'] as num? ?? 0.0);
-                                    final record = _getRecordForPR(pr);
-                                    final gapText = record != null ? _recordGapText(pr, record) : null;
-                                    final pct = record != null ? _recordPercentage(pr, record) : null;
-                                    return _PRRow(pr: pr, isLast: isLast, delta: delta, dark: dark, recordGapText: gapText, recordPct: pct, ranks: _ranks[pr['event']] ?? const []);
-                                  }).toList(),
-                                ),
-                              ),
-                            ],
+                            ),
                           ),
                         ),
                         const SizedBox(height: 28),
@@ -521,41 +510,26 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                         if (_rivals.isNotEmpty) ...[
                           FadeSlideIn(
                             delay: const Duration(milliseconds: 195),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'RIVALS',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: C.text3(dark),
-                                    letterSpacing: 0.06 * 13,
-                                  ),
+                            child: _FoldableSection(
+                              title: 'RIVALS',
+                              subtitle: 'Closest teammate PR in each event',
+                              dark: dark,
+                              child: GlassCard(
+                                forceDark: dark,
+                                child: Column(
+                                  children: _rivals.asMap().entries.map((entry) {
+                                    final rival = entry.value;
+                                    return _RivalRow(
+                                      rival: rival,
+                                      name: _team!.nameOf(rival.athleteId),
+                                      gender: _team!.genderOf(rival.athleteId),
+                                      isLast: entry.key == _rivals.length - 1,
+                                      dark: dark,
+                                      onTap: () => _openAthlete(rival.athleteId),
+                                    );
+                                  }).toList(),
                                 ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Closest teammate PR in each event',
-                                  style: TextStyle(fontSize: 12, color: C.text3(dark)),
-                                ),
-                                const SizedBox(height: 12),
-                                GlassCard(
-                                  forceDark: dark,
-                                  child: Column(
-                                    children: _rivals.asMap().entries.map((entry) {
-                                      final rival = entry.value;
-                                      return _RivalRow(
-                                        rival: rival,
-                                        name: _team!.nameOf(rival.athleteId),
-                                        gender: _team!.genderOf(rival.athleteId),
-                                        isLast: entry.key == _rivals.length - 1,
-                                        dark: dark,
-                                        onTap: () => _openAthlete(rival.athleteId),
-                                      );
-                                    }).toList(),
-                                  ),
-                                ),
-                              ],
+                              ),
                             ),
                           ),
                           const SizedBox(height: 28),
@@ -630,21 +604,10 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                         // Meet history
                         FadeSlideIn(
                           delay: const Duration(milliseconds: 240),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'MEET HISTORY',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: C.text3(dark),
-                                  letterSpacing: 0.06 * 13,
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              _buildMeetHistory(dark),
-                            ],
+                          child: _FoldableSection(
+                            title: 'MEET HISTORY',
+                            dark: dark,
+                            child: _buildMeetHistory(dark),
                           ),
                         ),
                         ],
@@ -1267,6 +1230,101 @@ class _TrendLinePainter extends CustomPainter {
       old.prValue != prValue ||
       !listEquals(old.positions, positions) ||
       !listEquals(old.values, values);
+}
+
+// ─── Foldable section ───────────────────────────────────────────────────────
+
+/// A profile section whose header folds its content away. Starts open.
+class _FoldableSection extends StatefulWidget {
+  final String title;
+  final String? subtitle;
+  final bool dark;
+  final Widget child;
+
+  const _FoldableSection({required this.title, this.subtitle, required this.dark, required this.child});
+
+  @override
+  State<_FoldableSection> createState() => _FoldableSectionState();
+}
+
+class _FoldableSectionState extends State<_FoldableSection> with SingleTickerProviderStateMixin {
+  bool _open = true;
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 280),
+    value: 1,
+  );
+  late final Animation<double> _reveal = CurvedAnimation(parent: _ctrl, curve: kSpring, reverseCurve: kSpring.flipped);
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _toggle() {
+    HapticFeedback.selectionClick();
+    setState(() => _open = !_open);
+    _open ? _ctrl.forward() : _ctrl.reverse();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = widget.dark;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _toggle,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      widget.title,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: C.text3(dark),
+                        letterSpacing: 0.06 * 13,
+                      ),
+                    ),
+                  ),
+                  AnimatedRotation(
+                    turns: _open ? 0 : -0.25,
+                    duration: const Duration(milliseconds: 280),
+                    curve: kSpring,
+                    child: Icon(Icons.keyboard_arrow_down_rounded, size: 20, color: C.text3(dark)),
+                  ),
+                ],
+              ),
+              if (widget.subtitle != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  widget.subtitle!,
+                  style: TextStyle(fontSize: 12, color: C.text3(dark)),
+                ),
+              ],
+            ],
+          ),
+        ),
+        SizeTransition(
+          sizeFactor: _reveal,
+          alignment: Alignment.topCenter,
+          child: FadeTransition(
+            opacity: _reveal,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: widget.child,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 // ─── Rival row ──────────────────────────────────────────────────────────────
