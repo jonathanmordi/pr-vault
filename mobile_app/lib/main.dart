@@ -8,6 +8,7 @@ import 'leaderboard_screen.dart';
 import 'profile_screen.dart';
 import 'settings_screen.dart';
 import 'maxes_screen.dart';
+import 'onboarding.dart';
 import 'prefs.dart';
 
 Future<void> main() async {
@@ -121,7 +122,7 @@ class PRVaultApp extends StatelessWidget {
   }
 }
 
-/// Waits for a signed-in session before showing the main shell.
+/// Waits for a signed-in session, then onboarding, before the main shell.
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
 
@@ -135,7 +136,7 @@ class AuthGate extends StatelessWidget {
         final session = snapshot.hasData
             ? snapshot.data!.session
             : supabase.auth.currentSession;
-        if (session != null) return const MainShell();
+        if (session != null) return const OnboardingGate(child: MainShell());
         return const LoginScreen();
       },
     );
@@ -230,7 +231,8 @@ class _TabPage extends StatelessWidget {
   }
 }
 
-/// Email/password auth plus optional invite code routing.
+/// Email/password sign-in, and sign-up with a school email that's verified
+/// with an emailed code.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -245,28 +247,38 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _loading = false;
   bool _isSignUp = false;
 
+  void _openVerify(String email) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => VerifyEmailScreen(email: email)),
+    );
+  }
+
   Future<void> _submit() async {
     // Single handler toggles between login and registration states.
+    final email = _emailCtrl.text.trim();
     setState(() => _loading = true);
     try {
       if (_isSignUp) {
         final res = await supabase.auth.signUp(
-          email: _emailCtrl.text.trim(),
+          email: email,
           password: _passCtrl.text.trim(),
           data: {'full_name': _nameCtrl.text.trim(), 'role': 'athlete'},
         );
-        if (res.user != null && mounted) {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => InviteCodeScreen(userId: res.user!.id),
-            ),
-          );
-        }
+        // With email confirmation on there's no session until the emailed
+        // code is entered. Without it, AuthGate takes over straight away.
+        if (res.session == null && mounted) _openVerify(email);
       } else {
-        await supabase.auth.signInWithPassword(
-          email: _emailCtrl.text.trim(),
-          password: _passCtrl.text.trim(),
-        );
+        try {
+          await supabase.auth.signInWithPassword(
+            email: email,
+            password: _passCtrl.text.trim(),
+          );
+        } on AuthException catch (e) {
+          // Signed up but never entered the code: send a fresh one.
+          if (e.code != 'email_not_confirmed') rethrow;
+          await const OnboardingApi().resendSignup(email);
+          if (mounted) _openVerify(email);
+        }
       }
     } on AuthException catch (e) {
       if (mounted) {
@@ -351,7 +363,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const Spacer(),
               if (_isSignUp) ...[
-                _InputField(
+                InputField(
                   controller: _nameCtrl,
                   hint: 'Full name',
                   icon: Icons.person_outline,
@@ -359,15 +371,16 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 12),
               ],
-              _InputField(
+              InputField(
                 controller: _emailCtrl,
-                hint: 'Email',
+                hint: _isSignUp ? 'School email' : 'Email',
                 icon: Icons.mail_outline,
                 dark: dark,
                 keyboardType: TextInputType.emailAddress,
+                autofillHints: const [AutofillHints.email],
               ),
               const SizedBox(height: 12),
-              _InputField(
+              InputField(
                 controller: _passCtrl,
                 hint: 'Password',
                 icon: Icons.lock_outline,
@@ -375,43 +388,19 @@ class _LoginScreenState extends State<LoginScreen> {
                 obscure: true,
               ),
               const SizedBox(height: 20),
-              PressScale(
-                onTap: _loading ? () {} : _submit,
-                child: Container(
-                  height: 52,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [C.accentOf(dark), C.accentAlt],
-                    ),
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x4DB80C09),
-                        blurRadius: 20,
-                        offset: Offset(0, 6),
-                      ),
-                    ],
-                  ),
-                  child: Center(
-                    child: _loading
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : Text(
-                            _isSignUp ? 'Create Account' : 'Sign In',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                  ),
+              if (_isSignUp) ...[
+                Text(
+                  "Use your school email and you'll join your team "
+                  'automatically. We\'ll send a code to check it.',
+                  style: TextStyle(fontSize: 12, height: 1.4, color: C.text3(dark)),
                 ),
+                const SizedBox(height: 16),
+              ],
+              PrimaryButton(
+                label: _isSignUp ? 'Create Account' : 'Sign In',
+                loading: _loading,
+                onTap: _submit,
+                dark: dark,
               ),
               const SizedBox(height: 16),
               GestureDetector(
@@ -432,200 +421,6 @@ class _LoginScreenState extends State<LoginScreen> {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// Collects the team invite code immediately after sign-up.
-class InviteCodeScreen extends StatefulWidget {
-  final String userId;
-  const InviteCodeScreen({super.key, required this.userId});
-
-  @override
-  State<InviteCodeScreen> createState() => _InviteCodeScreenState();
-}
-
-class _InviteCodeScreenState extends State<InviteCodeScreen> {
-  final _codeCtrl = TextEditingController();
-  bool _loading = false;
-
-  Future<void> _submitCode() async {
-    final code = _codeCtrl.text.trim().toUpperCase();
-    if (code.isEmpty) return;
-
-    setState(() => _loading = true);
-    try {
-      // Server validates the code and sets our team_id (see join_team in
-      // backend/supabase/migrations). Returns null for an unknown code.
-      final result = await supabase.rpc('join_team', params: {'p_code': code});
-
-      if (result == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Invalid invite code. Check with your coach.'),
-            ),
-          );
-        }
-        return;
-      }
-
-      // AuthGate will notice the new session; simply unwind the stack.
-      if (mounted) Navigator.of(context).popUntil((r) => r.isFirst);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Something went wrong: $e')));
-      }
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  @override
-  void dispose() {
-    _codeCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-
-    return Scaffold(
-      backgroundColor: C.bg(dark),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 28),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Spacer(),
-              Icon(Icons.key_outlined, size: 48, color: C.accentOf(dark)),
-              const SizedBox(height: 20),
-              Text(
-                'Enter invite code',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.5,
-                  color: C.text1(dark),
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Ask your coach for your team\'s invite code.',
-                style: TextStyle(fontSize: 15, color: C.text3(dark)),
-                textAlign: TextAlign.center,
-              ),
-              const Spacer(),
-              _InputField(
-                controller: _codeCtrl,
-                hint: 'Invite code',
-                icon: Icons.tag,
-                dark: dark,
-              ),
-              const SizedBox(height: 20),
-              PressScale(
-                onTap: _loading ? () {} : _submitCode,
-                child: Container(
-                  height: 52,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [C.accentOf(dark), C.accentAlt],
-                    ),
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x4DB80C09),
-                        blurRadius: 20,
-                        offset: Offset(0, 6),
-                      ),
-                    ],
-                  ),
-                  child: Center(
-                    child: _loading
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : const Text(
-                            'Join Team',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 32),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Decorated input used on auth and invite screens for a consistent look.
-class _InputField extends StatelessWidget {
-  final TextEditingController controller;
-  final String hint;
-  final IconData icon;
-  final bool dark;
-  final bool obscure;
-  final TextInputType? keyboardType;
-
-  const _InputField({
-    required this.controller,
-    required this.hint,
-    required this.icon,
-    required this.dark,
-    this.obscure = false,
-    this.keyboardType,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 52,
-      decoration: BoxDecoration(
-        color: C.surface(dark),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: C.border(dark)),
-      ),
-      child: Row(
-        children: [
-          const SizedBox(width: 16),
-          Icon(icon, size: 18, color: C.text3(dark)),
-          const SizedBox(width: 12),
-          Expanded(
-            child: TextField(
-              controller: controller,
-              obscureText: obscure,
-              keyboardType: keyboardType,
-              style: TextStyle(fontSize: 15, color: C.text1(dark)),
-              decoration: InputDecoration(
-                hintText: hint,
-                hintStyle: TextStyle(color: C.text3(dark), fontSize: 15),
-                border: InputBorder.none,
-                isDense: true,
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
-          ),
-          const SizedBox(width: 16),
-        ],
       ),
     );
   }

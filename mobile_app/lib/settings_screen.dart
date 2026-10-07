@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'design_system.dart';
+import 'onboarding.dart';
 import 'prefs.dart';
 
 final supabase = Supabase.instance.client;
@@ -13,7 +14,9 @@ const _themeLabels = {
 };
 
 class SettingsScreen extends StatelessWidget {
-  const SettingsScreen({super.key});
+  final OnboardingApi api;
+
+  const SettingsScreen({super.key, this.api = const OnboardingApi()});
 
   String _alertsSummary(Prefs p) {
     final on = [p.alertMine, p.alertRivals, p.alertTeam];
@@ -74,12 +77,7 @@ class SettingsScreen extends StatelessWidget {
                         dark: dark,
                         divider: true,
                       ),
-                      _SettingsRow(
-                        icon: Icons.school_outlined,
-                        title: 'My Team',
-                        subtitle: 'Team',
-                        dark: dark,
-                      ),
+                      _TeamRow(api: api, dark: dark),
                     ],
                   ),
                 ],
@@ -176,7 +174,17 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 4),
+            Center(
+              child: TextButton(
+                onPressed: () => _confirmDelete(context, api),
+                child: Text(
+                  'Delete account',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: C.text3(dark)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
 
             // ── Version footer ─────────────────────────────────
             FadeSlideIn(
@@ -211,9 +219,159 @@ class SettingsScreen extends StatelessWidget {
   }
 }
 
+Future<void> _confirmDelete(BuildContext context, OnboardingApi api) async {
+  HapticFeedback.mediumImpact();
+  final confirmed = await showModalBottomSheet<bool>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    builder: (_) => const _DeleteAccountSheet(),
+  );
+  if (confirmed != true || !context.mounted) return;
+
+  // Block the screen while deleting; the sign-out afterwards swaps the
+  // whole app back to the sign-in screen.
+  showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+  );
+  try {
+    await api.deleteAccount();
+    if (context.mounted) Navigator.of(context).pop();
+    await api.signOutLocally();
+  } catch (_) {
+    if (!context.mounted) return;
+    Navigator.of(context).pop();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Couldn't delete your account. Try again.")),
+    );
+  }
+}
+
+/// Says exactly what deleting removes and what stays before it happens.
+class _DeleteAccountSheet extends StatelessWidget {
+  const _DeleteAccountSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    Widget point(IconData icon, String text) => Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, size: 18, color: C.text3(dark)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(text, style: TextStyle(fontSize: 14, height: 1.4, color: C.text2(dark))),
+              ),
+            ],
+          ),
+        );
+
+    return Container(
+      decoration: BoxDecoration(
+        color: C.sheet(dark),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: C.text3(dark).withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Delete your account?',
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, letterSpacing: -0.4, color: C.text1(dark)),
+            ),
+            const SizedBox(height: 16),
+            point(Icons.person_off_outlined, 'Your login and lifting maxes are deleted.'),
+            point(Icons.emoji_events_outlined,
+                "Your TFRRS results stay on your team's leaderboards, since "
+                "they're public. If you come back, you can link them again."),
+            point(Icons.warning_amber_rounded, "This can't be undone."),
+            const SizedBox(height: 8),
+            PrimaryButton(
+              label: 'Delete account',
+              onTap: () => Navigator.of(context).pop(true),
+              dark: dark,
+            ),
+            const SizedBox(height: 4),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text('Cancel', style: TextStyle(fontSize: 15, color: C.text2(dark))),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 void _push(BuildContext context, Widget screen) {
   HapticFeedback.selectionClick();
   Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
+}
+
+/// The user's team. Loaded once per account and remembered, so switching
+/// tabs doesn't flash a placeholder.
+class _TeamRow extends StatefulWidget {
+  final OnboardingApi api;
+  final bool dark;
+
+  const _TeamRow({required this.api, required this.dark});
+
+  @override
+  State<_TeamRow> createState() => _TeamRowState();
+}
+
+class _TeamRowState extends State<_TeamRow> {
+  static String? _cachedFor;
+  static TeamInfo? _cached;
+
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loading = _cachedFor != widget.api.userId;
+    _load();
+  }
+
+  Future<void> _load() async {
+    final uid = widget.api.userId;
+    try {
+      final team = await widget.api.myTeam();
+      _cachedFor = uid;
+      _cached = team;
+    } catch (_) {
+      // Keep whatever we showed last.
+    }
+    if (mounted) setState(() => _loading = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final team = _cachedFor == widget.api.userId ? _cached : null;
+    return _SettingsRow(
+      icon: Icons.school_outlined,
+      title: team?.name ?? (_loading ? 'Loading team…' : 'No team yet'),
+      subtitle: ['Team', ?team?.divisionLabel].join(' · '),
+      dark: widget.dark,
+    );
+  }
 }
 
 // ─── Notifications ────────────────────────────────────────────────────────────
