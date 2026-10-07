@@ -1297,41 +1297,67 @@ class _SegmentToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final n = options.length;
+    final index = options.indexOf(value).clamp(0, n - 1);
     return Container(
       height: 30,
+      padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
         color: C.surface2(dark),
         borderRadius: BorderRadius.circular(100),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: options.map((v) {
-          final active = value == v;
-          return GestureDetector(
-            onTap: () {
-              if (active) return;
-              HapticFeedback.selectionClick();
-              onChanged(v);
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: active ? C.accent : Colors.transparent,
-                borderRadius: BorderRadius.circular(100),
-              ),
-              child: Text(
-                v,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: active ? Colors.white : C.text3(dark),
+      // Every segment is as wide as the widest label, so 'All' doesn't get
+      // more room than 'M' or 'F', and the thumb slides between them.
+      child: IntrinsicWidth(
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: AnimatedAlign(
+                duration: const Duration(milliseconds: 250),
+                curve: kSpring,
+                alignment: Alignment(n > 1 ? -1 + 2 * index / (n - 1) : 0, 0),
+                child: FractionallySizedBox(
+                  widthFactor: 1 / n,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: C.accent,
+                      borderRadius: BorderRadius.circular(100),
+                    ),
+                  ),
                 ),
               ),
             ),
-          );
-        }).toList(),
+            Row(
+              children: options.map((v) {
+                final active = value == v;
+                return Expanded(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () {
+                      if (active) return;
+                      HapticFeedback.selectionClick();
+                      onChanged(v);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Center(
+                        child: AnimatedDefaultTextStyle(
+                          duration: const Duration(milliseconds: 200),
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: active ? Colors.white : C.text3(dark),
+                          ),
+                          child: Text(v),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+        ),
       ),
     );
   }
