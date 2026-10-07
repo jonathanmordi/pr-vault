@@ -430,4 +430,69 @@ void main() {
       expect(ranks.keys, unorderedEquals(['60 Meters', '100 Meters']));
     });
   });
+
+  group('parseMarkValue', () {
+    test('reads times, field marks and points', () {
+      expect(parseMarkValue('10.22'), 10.22);
+      expect(parseMarkValue('1:59.23'), closeTo(119.23, 1e-9));
+      expect(parseMarkValue('1:02:03.5'), closeTo(3723.5, 1e-9));
+      expect(parseMarkValue('6.95m'), 6.95);
+      expect(parseMarkValue(' 4520 '), 4520);
+    });
+
+    test('returns null for non-marks', () {
+      expect(parseMarkValue('DNF'), isNull);
+      expect(parseMarkValue(''), isNull);
+      expect(parseMarkValue(null), isNull);
+    });
+  });
+
+  group('ListRank.nationals', () {
+    ListRank national(int rank, String mark,
+            {String? cut, int? cutRank = 22}) =>
+        ListRank.tryParse({
+          'event': '100 Meters',
+          'scope': 'national',
+          'label': 'D3',
+          'season': 'outdoor',
+          'season_year': 2026,
+          'rank': rank,
+          'list_size': 500,
+          'mark_display': mark,
+          'cut_rank': cutRank,
+          'cut_mark': cut,
+        })!;
+
+    test('inside the cut, with the margin', () {
+      final s = national(19, '10.62', cut: '10.70').nationals!;
+      expect(s.inside, isTrue);
+      expect(s.gap, closeTo(0.08, 1e-9));
+    });
+
+    test('outside the cut, with how far', () {
+      final s = national(31, '10.81', cut: '10.70').nationals!;
+      expect(s.inside, isFalse);
+      expect(s.gap, closeTo(0.11, 1e-9));
+    });
+
+    test('a list shorter than the cut has everyone in, with no margin', () {
+      final s = national(3, '10.81').nationals!;
+      expect(s.inside, isTrue);
+      expect(s.gap, isNull);
+    });
+
+    test('nothing for conference lists or before cuts were scraped', () {
+      expect(national(1, '10.5', cutRank: null).nationals, isNull);
+      final conf = ListRank.tryParse({
+        'event': '100 Meters',
+        'scope': 'conference',
+        'label': 'MAC',
+        'season': 'outdoor',
+        'season_year': 2026,
+        'rank': 1,
+        'cut_rank': 22,
+      })!;
+      expect(conf.nationals, isNull);
+    });
+  });
 }

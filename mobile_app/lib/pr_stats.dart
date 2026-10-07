@@ -408,6 +408,15 @@ class ListRank {
   final int rank;
   final int listSize;
 
+  /// The athlete's mark on the list, as TFRRS shows it.
+  final String? markDisplay;
+
+  /// Size of the projected championship field, on national lists.
+  final int? cutRank;
+
+  /// Mark of the athlete at [cutRank], or null while the list is shorter.
+  final String? cutMark;
+
   const ListRank({
     required this.event,
     required this.scope,
@@ -416,6 +425,9 @@ class ListRank {
     required this.seasonYear,
     required this.rank,
     required this.listSize,
+    this.markDisplay,
+    this.cutRank,
+    this.cutMark,
   });
 
   /// Parses a list_ranks row, or returns null if it's incomplete.
@@ -438,6 +450,22 @@ class ListRank {
       seasonYear: year,
       rank: rank,
       listSize: (row['list_size'] as num?)?.toInt() ?? 0,
+      markDisplay: row['mark_display'] as String?,
+      cutRank: (row['cut_rank'] as num?)?.toInt(),
+      cutMark: row['cut_mark'] as String?,
+    );
+  }
+
+  /// Where this rank sits against the projected national championship
+  /// field, or null for conference lists and lists without a cut.
+  NationalsStatus? get nationals {
+    final cut = cutRank;
+    if (scope != 'national' || cut == null) return null;
+    final mine = parseMarkValue(markDisplay);
+    final line = parseMarkValue(cutMark);
+    return NationalsStatus(
+      inside: rank <= cut,
+      gap: mine == null || line == null ? null : (mine - line).abs(),
     );
   }
 
@@ -465,4 +493,23 @@ Map<String, List<ListRank>> latestRanksByEvent(
           .compareTo(b.scope == 'national' ? 0 : 1));
     return MapEntry(event, current);
   });
+}
+
+/// How a national rank compares with the projected championship field.
+class NationalsStatus {
+  final bool inside;
+
+  /// Distance from the cut in the event's unit (seconds, meters or points),
+  /// or null when there's no cut mark yet.
+  final double? gap;
+
+  const NationalsStatus({required this.inside, this.gap});
+}
+
+/// A TFRRS mark as a number: '10.22' → 10.22, '1:59.23' → 119.23,
+/// '6.95m' → 6.95, '4520' → 4520. Null for anything else (DNF, FOUL).
+double? parseMarkValue(String? raw) {
+  final m = RegExp(r'^\d+(?::\d+){0,2}(?:\.\d+)?').firstMatch(raw?.trim() ?? '');
+  if (m == null) return null;
+  return m.group(0)!.split(':').fold<double>(0, (total, part) => total * 60 + double.parse(part));
 }
