@@ -4,20 +4,40 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'athlete_profile_screen.dart';
 import 'design_system.dart';
 import 'pr_stats.dart';
+import 'prefs.dart';
 import 'team_data.dart';
 
 /// Tracks which PR alerts the user has already seen so the bell can show an
 /// unread count. Seen keys are stored per user in SharedPreferences.
 class ActivityFeed {
-  ActivityFeed._();
+  ActivityFeed._() {
+    // Notification settings change what's in the feed, so recount.
+    Prefs.instance.addListener(() {
+      final snap = TeamData.instance.cached;
+      if (snap != null) refresh(snap);
+    });
+  }
   static final instance = ActivityFeed._();
 
   static const feedSize = 100;
 
   final unread = ValueNotifier<int>(0);
 
-  static List<PrEvent> itemsOf(TeamSnapshot snap) =>
+  static List<PrEvent> _recent(TeamSnapshot snap) =>
       snap.prEvents.take(feedSize).toList();
+
+  /// The recent PRs the user's notification settings let through.
+  static List<PrEvent> itemsOf(TeamSnapshot snap) {
+    final p = Prefs.instance;
+    final me = snap.userId;
+    final rivals = me == null ? const <String, Rival>{} : snap.rivalsOf(me);
+    return _recent(snap).where((e) {
+      if (p.alertRecords && e.schoolRecord) return true;
+      if (e.athleteId == me) return p.alertMine;
+      if (rivals[e.event]?.athleteId == e.athleteId) return p.alertRivals;
+      return p.alertTeam;
+    }).toList();
+  }
 
   String _prefsKey(TeamSnapshot snap) => 'activity_seen_v1:${snap.userId}';
 
@@ -43,7 +63,9 @@ class ActivityFeed {
 
   /// Marks the whole feed as read and returns the keys that were unread.
   Future<Set<String>> markAllSeen(TeamSnapshot snap) async {
-    final keys = itemsOf(snap).map((e) => e.key).toList();
+    // Hidden alerts count as seen too, so turning a filter back on doesn't
+    // bring back old PRs as unread.
+    final keys = _recent(snap).map((e) => e.key).toList();
     final seen = await _loadSeen(snap) ?? keys.toSet();
     final fresh = keys.where((k) => !seen.contains(k)).toSet();
     try {
@@ -119,15 +141,11 @@ class _ActivityScreenState extends State<ActivityScreen> {
 
   void _openAthlete(String athleteId) {
     final snap = _snap!;
-    Navigator.push(
+    showAthleteSheet(
       context,
-      MaterialPageRoute(
-        builder: (_) => AthleteProfileScreen(
-          athleteId: athleteId,
-          athleteName: snap.nameOf(athleteId),
-          gender: snap.genderOf(athleteId),
-        ),
-      ),
+      athleteId: athleteId,
+      athleteName: snap.nameOf(athleteId),
+      gender: snap.genderOf(athleteId),
     );
   }
 
@@ -135,87 +153,92 @@ class _ActivityScreenState extends State<ActivityScreen> {
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
 
-    return Scaffold(
-      backgroundColor: C.bg(dark),
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 20, 0),
-              child: Row(
-                children: [
-                  PressScale(
-                    onTap: () => Navigator.pop(context),
-                    child: Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: C.surface2(dark),
-                      ),
-                      child: Icon(Icons.arrow_back,
-                          size: 16, color: C.text2(dark)),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    'Activity',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.5,
-                      color: C.text1(dark),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              height: 36,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                children: ['All', 'Rivals', 'You'].map((f) {
-                  final sel = f == _filter;
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: PressScale(
-                      pressedScale: 0.96,
-                      onTap: () {
-                        if (sel) return;
-                        HapticFeedback.selectionClick();
-                        setState(() => _filter = f);
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        curve: kSpring,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        alignment: Alignment.center,
+    return SheetBackdrop(
+      child: Scaffold(
+        backgroundColor: C.bg(dark),
+        body: SafeArea(
+          bottom: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 20, 0),
+                child: Row(
+                  children: [
+                    PressScale(
+                      onTap: () => Navigator.pop(context),
+                      child: Container(
+                        width: 32,
+                        height: 32,
                         decoration: BoxDecoration(
-                          color: sel ? C.accent : C.surface2(dark),
-                          borderRadius: BorderRadius.circular(100),
+                          shape: BoxShape.circle,
+                          color: C.surface2(dark),
                         ),
-                        child: Text(
-                          f,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: sel ? Colors.white : C.text2(dark),
+                        child: Icon(
+                          Icons.arrow_back,
+                          size: 16,
+                          color: C.text2(dark),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Activity',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.5,
+                        color: C.text1(dark),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                height: 36,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  children: ['All', 'Rivals', 'You'].map((f) {
+                    final sel = f == _filter;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: PressScale(
+                        pressedScale: 0.96,
+                        onTap: () {
+                          if (sel) return;
+                          HapticFeedback.selectionClick();
+                          setState(() => _filter = f);
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          curve: kSpring,
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: sel ? C.accentOf(dark) : C.surface2(dark),
+                            borderRadius: BorderRadius.circular(100),
+                          ),
+                          child: Text(
+                            f,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: sel ? Colors.white : C.text2(dark),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  );
-                }).toList(),
+                    );
+                  }).toList(),
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            Container(height: 0.5, color: C.border(dark)),
-            Expanded(child: _buildBody(dark)),
-          ],
+              const SizedBox(height: 12),
+              Container(height: 0.5, color: C.border(dark)),
+              Expanded(child: _buildBody(dark)),
+            ],
+          ),
         ),
       ),
     );
@@ -223,38 +246,44 @@ class _ActivityScreenState extends State<ActivityScreen> {
 
   Widget _buildBody(bool dark) {
     if (_loading) {
-      return const Center(
-          child: CircularProgressIndicator(color: C.accent, strokeWidth: 2));
+      return Center(
+        child: CircularProgressIndicator(
+          color: C.accentOf(dark),
+          strokeWidth: 2,
+        ),
+      );
     }
     return RefreshIndicator(
-      color: C.accent,
+      color: C.accentOf(dark),
       onRefresh: () {
         HapticFeedback.lightImpact();
         return _load(force: true);
       },
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 180),
-        child: KeyedSubtree(
-          key: ValueKey(_filter),
-          child: _buildList(dark),
-        ),
+        child: KeyedSubtree(key: ValueKey(_filter), child: _buildList(dark)),
       ),
     );
   }
 
   Widget _buildList(bool dark) {
-    const physics =
-        AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics());
+    const physics = AlwaysScrollableScrollPhysics(
+      parent: BouncingScrollPhysics(),
+    );
 
     if (_snap == null || _error != null) {
-      return _message(dark, physics, Icons.cloud_off_outlined,
-          _error ?? "Couldn't load activity.");
+      return _message(
+        dark,
+        physics,
+        Icons.cloud_off_outlined,
+        _error ?? "Couldn't load activity.",
+      );
     }
 
     final items = _items;
     if (items.isEmpty) {
-      final linked = _myId != null &&
-          _snap!.prs.any((p) => p['athlete_id'] == _myId);
+      final linked =
+          _myId != null && _snap!.prs.any((p) => p['athlete_id'] == _myId);
       final text = switch (_filter) {
         'Rivals' when !linked => 'Link your TFRRS profile to get rivals.',
         'Rivals' => 'No PRs from your rivals yet.',
@@ -313,7 +342,11 @@ class _ActivityScreenState extends State<ActivityScreen> {
   }
 
   Widget _message(
-      bool dark, ScrollPhysics physics, IconData icon, String text) {
+    bool dark,
+    ScrollPhysics physics,
+    IconData icon,
+    String text,
+  ) {
     return ListView(
       physics: physics,
       children: [
@@ -324,15 +357,30 @@ class _ActivityScreenState extends State<ActivityScreen> {
           text,
           textAlign: TextAlign.center,
           style: TextStyle(
-              fontSize: 15, fontWeight: FontWeight.w500, color: C.text3(dark)),
+            fontSize: 15,
+            fontWeight: FontWeight.w500,
+            color: C.text3(dark),
+          ),
         ),
       ],
     );
   }
 
   String _monthLabel(DateTime d) {
-    const months = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
-        'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
+    const months = [
+      'JANUARY',
+      'FEBRUARY',
+      'MARCH',
+      'APRIL',
+      'MAY',
+      'JUNE',
+      'JULY',
+      'AUGUST',
+      'SEPTEMBER',
+      'OCTOBER',
+      'NOVEMBER',
+      'DECEMBER',
+    ];
     return '${months[d.month - 1]} ${d.year}';
   }
 }
@@ -360,10 +408,11 @@ class _ActivityRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final prefs = Prefs.of(context);
     final sign = isFieldEvent(pr.event) ? '+' : '−';
     final detail = [
-      pr.display,
-      '$sign${formatGap(pr.event, pr.gap)} (${pr.improvementPct.toStringAsFixed(1)}%)',
+      prefs.mark(pr.event, pr.display, pr.value),
+      '$sign${prefs.gap(pr.event, pr.gap)} (${pr.improvementPct.toStringAsFixed(1)}%)',
       if (pr.meetName.isNotEmpty) pr.meetName,
     ].join(' · ');
 
@@ -426,10 +475,10 @@ class _ActivityRow extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   '+${pr.points} pts',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
-                    color: C.accent,
+                    color: C.accentOf(dark),
                   ),
                 ),
               ],
@@ -444,7 +493,7 @@ class _ActivityRow extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        color: filled ? C.accent : C.accentSoft(dark),
+        color: filled ? C.accentOf(dark) : C.accentSoft(dark),
         borderRadius: BorderRadius.circular(100),
       ),
       child: Text(
@@ -453,7 +502,7 @@ class _ActivityRow extends StatelessWidget {
           fontSize: 10,
           fontWeight: FontWeight.w700,
           letterSpacing: 0.4,
-          color: filled ? Colors.white : C.accent,
+          color: filled ? Colors.white : C.accentOf(dark),
         ),
       ),
     );

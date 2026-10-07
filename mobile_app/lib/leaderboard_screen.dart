@@ -4,6 +4,7 @@ import 'activity_screen.dart';
 import 'design_system.dart';
 import 'athlete_profile_screen.dart';
 import 'pr_stats.dart';
+import 'prefs.dart';
 import 'team_data.dart';
 
 // ─── Event categories with subcategories ─────────────────────────────────────
@@ -205,26 +206,29 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
   }
 
   void _openDetail(Map<String, dynamic> entry) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withValues(alpha: 0.5),
-      builder: (_) => _AthleteDetailSheet(entry: entry),
+    final event = entry['event'] as String? ?? '';
+    showAthleteSheet(
+      context,
+      athleteId: entry['athlete_id'] ?? '',
+      athleteName: entry['profiles']?['full_name'] ?? 'Unknown',
+      gender: entry['profiles']?['gender'] ?? 'M',
+      focus: ProfileFocus(
+        event: event,
+        display: entry['best_display'],
+        meters: entry['best_mark_meters'],
+        improvementPct:
+            (entry['improvement_delta_pct'] as num? ?? 0).toDouble(),
+      ),
     );
   }
 
   void _openAthlete(String athleteId) {
     final snap = _snap!;
-    Navigator.push(
+    showAthleteSheet(
       context,
-      MaterialPageRoute(
-        builder: (_) => AthleteProfileScreen(
-          athleteId: athleteId,
-          athleteName: snap.nameOf(athleteId),
-          gender: snap.genderOf(athleteId),
-        ),
-      ),
+      athleteId: athleteId,
+      athleteName: snap.nameOf(athleteId),
+      gender: snap.genderOf(athleteId),
     );
   }
 
@@ -310,10 +314,10 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                       width: 36,
                       height: 36,
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(
+                        gradient: LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
-                          colors: [C.accent, C.accentAlt],
+                          colors: [C.accentOf(dark), C.accentAlt],
                         ),
                         borderRadius: BorderRadius.circular(12),
                         boxShadow: const [
@@ -350,9 +354,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                   child: Container(
                     height: 42,
                     decoration: BoxDecoration(
-                      color: dark
-                          ? const Color(0xFF2C2C2E)
-                          : const Color(0xFFEEECE9),
+                      color: C.field(dark),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Row(
@@ -392,7 +394,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                   ),
                 ),
                 const SizedBox(width: 8),
-                _SegmentToggle(
+                SegmentToggle(
                   options: const ['All', 'M', 'F'],
                   value: _gender,
                   dark: dark,
@@ -465,7 +467,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                 height: 36,
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
-                  color: sel ? C.accent : C.surface2(dark),
+                  color: sel ? C.accentOf(dark) : C.surface2(dark),
                   borderRadius: BorderRadius.circular(100),
                   boxShadow: sel
                       ? const [
@@ -591,7 +593,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
           const SizedBox(width: 4),
           Padding(
             padding: const EdgeInsets.only(right: 20),
-            child: _SegmentToggle(
+            child: SegmentToggle(
               options: const ['PRs', 'Points'],
               value: _trendByPoints ? 'Points' : 'PRs',
               dark: dark,
@@ -617,7 +619,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
     }
 
     return RefreshIndicator(
-      color: C.accent,
+      color: C.accentOf(dark),
       onRefresh: _refresh,
       // Cross-fade when the filters change instead of snapping.
       child: AnimatedSwitcher(
@@ -772,13 +774,16 @@ class _BellButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final showBadge = Prefs.of(context).showBadge;
     return PressScale(
       onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.all(8),
         child: ValueListenableBuilder<int>(
           valueListenable: ActivityFeed.instance.unread,
-          builder: (_, unread, _) => Stack(
+          builder: (_, count, _) {
+            final unread = showBadge ? count : 0;
+            return Stack(
             clipBehavior: Clip.none,
             children: [
               Icon(
@@ -800,7 +805,7 @@ class _BellButton extends StatelessWidget {
                     constraints: const BoxConstraints(minWidth: 17),
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     decoration: BoxDecoration(
-                      color: C.accent,
+                      color: C.accentOf(dark),
                       borderRadius: BorderRadius.circular(9),
                       border: Border.all(color: C.bg(dark), width: 1.5),
                     ),
@@ -817,7 +822,8 @@ class _BellButton extends StatelessWidget {
                 ),
               ),
             ],
-          ),
+          );
+          },
         ),
       ),
     );
@@ -940,10 +946,10 @@ class _TrendingRow extends StatelessWidget {
               children: [
                 Text(
                   byPoints ? '${trend.points} pts' : prs,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
-                    color: C.accent,
+                    color: C.accentOf(dark),
                     letterSpacing: -0.4,
                   ),
                 ),
@@ -980,7 +986,7 @@ class _RankBadge extends StatelessWidget {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: isFirst
-            ? C.accent
+            ? C.accentOf(dark)
             : isTop3
                 ? C.accentSoft(dark)
                 : C.surface2(dark),
@@ -1003,7 +1009,7 @@ class _RankBadge extends StatelessWidget {
           color: isFirst
               ? Colors.white
               : isTop3
-                  ? C.accent
+                  ? C.accentOf(dark)
                   : C.text2(dark),
         ),
       ),
@@ -1039,9 +1045,9 @@ class _OutlineChip extends StatelessWidget {
         alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
         decoration: BoxDecoration(
-          color: selected ? C.accent : Colors.transparent,
+          color: selected ? C.accentOf(dark) : Colors.transparent,
           borderRadius: BorderRadius.circular(100),
-          border: Border.all(color: selected ? C.accent : C.border(dark)),
+          border: Border.all(color: selected ? C.accentOf(dark) : C.border(dark)),
         ),
         child: Text(
           label,
@@ -1082,8 +1088,8 @@ class _PodiumCard extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  const Icon(Icons.local_fire_department,
-                      size: 14, color: C.accent),
+                  Icon(Icons.local_fire_department,
+                      size: 14, color: C.accentOf(dark)),
                   const SizedBox(width: 6),
                   Text(
                     'TOP IMPROVERS',
@@ -1091,7 +1097,7 @@ class _PodiumCard extends StatelessWidget {
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 0.8,
-                      color: C.accent,
+                      color: C.accentOf(dark),
                     ),
                   ),
                 ],
@@ -1141,8 +1147,8 @@ class _PodiumCard extends StatelessWidget {
                                             Color(0xFFED93B1)
                                           ]
                                         : idx == 0
-                                            ? const [
-                                                C.accent,
+                                            ? [
+                                                C.accentOf(dark),
                                                 C.accentAlt
                                               ]
                                             : [
@@ -1209,10 +1215,10 @@ class _PodiumCard extends StatelessWidget {
                             ),
                             child: Text(
                               '+${delta.toStringAsFixed(2)}%',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
-                                color: C.accent,
+                                color: C.accentOf(dark),
                               ),
                             ),
                           ),
@@ -1280,89 +1286,6 @@ class _SparklinePainter extends CustomPainter {
       old.data != data || old.color != color;
 }
 
-// ─── Segment toggle ───────────────────────────────────────────────────────────
-
-class _SegmentToggle extends StatelessWidget {
-  final List<String> options;
-  final String value;
-  final bool dark;
-  final ValueChanged<String> onChanged;
-
-  const _SegmentToggle({
-    required this.options,
-    required this.value,
-    required this.dark,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final n = options.length;
-    final index = options.indexOf(value).clamp(0, n - 1);
-    return Container(
-      height: 30,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: C.surface2(dark),
-        borderRadius: BorderRadius.circular(100),
-      ),
-      // Every segment is as wide as the widest label, so 'All' doesn't get
-      // more room than 'M' or 'F', and the thumb slides between them.
-      child: IntrinsicWidth(
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: AnimatedAlign(
-                duration: const Duration(milliseconds: 250),
-                curve: kSpring,
-                alignment: Alignment(n > 1 ? -1 + 2 * index / (n - 1) : 0, 0),
-                child: FractionallySizedBox(
-                  widthFactor: 1 / n,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: C.accent,
-                      borderRadius: BorderRadius.circular(100),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            Row(
-              children: options.map((v) {
-                final active = value == v;
-                return Expanded(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () {
-                      if (active) return;
-                      HapticFeedback.selectionClick();
-                      onChanged(v);
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Center(
-                        child: AnimatedDefaultTextStyle(
-                          duration: const Duration(milliseconds: 200),
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: active ? Colors.white : C.text3(dark),
-                          ),
-                          child: Text(v),
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 // ─── Tab button ───────────────────────────────────────────────────────────────
 
 class _TabBtn extends StatelessWidget {
@@ -1397,7 +1320,7 @@ class _TabBtn extends StatelessWidget {
             height: 2,
             width: active ? 44.0 : 0.0,
             decoration: BoxDecoration(
-              color: C.accent,
+              color: C.accentOf(dark),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -1512,9 +1435,9 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
                                         .clamp(0.0, 1.0) *
                                     widget.heatAnim.value,
                             child: Container(
-                              decoration: const BoxDecoration(
+                              decoration: BoxDecoration(
                                 gradient: LinearGradient(
-                                  colors: [C.accent, C.accentAlt],
+                                  colors: [C.accentOf(dark), C.accentAlt],
                                 ),
                               ),
                             ),
@@ -1540,7 +1463,7 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
                       data: widget.sparkData,
                       isField: isField,
                       color: delta > 0
-                          ? C.accent.withValues(alpha: 0.7)
+                          ? C.accentOf(dark).withValues(alpha: 0.7)
                           : C.text3(dark),
                     ),
                   ),
@@ -1558,11 +1481,11 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    e['best_display'] ?? '—',
-                    style: const TextStyle(
+                    Prefs.of(context).mark(event, e['best_display'], e['best_mark_meters']),
+                    style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
-                      color: C.accent,
+                      color: C.accentOf(dark),
                       letterSpacing: -0.5,
                     ),
                   ),
@@ -1602,305 +1525,17 @@ class _DeltaBadge extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.arrow_upward, size: 9, color: C.accent),
+          Icon(Icons.arrow_upward, size: 9, color: C.accentOf(dark)),
           const SizedBox(width: 2),
           Text(
             '${delta.toStringAsFixed(2)}%',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,
-              color: C.accent,
+              color: C.accentOf(dark),
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-// ─── Athlete detail bottom sheet ──────────────────────────────────────────────
-
-class _AthleteDetailSheet extends StatelessWidget {
-  final Map<String, dynamic> entry;
-
-  const _AthleteDetailSheet({required this.entry});
-
-  @override
-  Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final e = entry;
-    final name = formatName(e['profiles']?['full_name'] ?? 'Unknown');
-    final event = e['event'] ?? '';
-    final bestDisplay = e['best_display'] ?? '—';
-    final delta = (e['improvement_delta_pct'] ?? 0.0) as num;
-    final gender = e['profiles']?['gender'] ?? 'M';
-    final initials = initialsFor(e['profiles']?['full_name'] ?? '');
-
-    // The modal route already slides the sheet in; a second custom
-    // slide/scale on top of it made the sheet lag behind its own route.
-    return RepaintBoundary(
-      child: Container(
-        decoration: BoxDecoration(
-          color: C.surface(dark),
-          borderRadius:
-              const BorderRadius.vertical(top: Radius.circular(24)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.22),
-              blurRadius: 40,
-              offset: const Offset(0, -8),
-            ),
-          ],
-        ),
-        child: SafeArea(
-          top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(top: 12, bottom: 8),
-                child: Container(
-                  width: 36,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: C.text3(dark),
-                    borderRadius: BorderRadius.circular(3),
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 64,
-                          height: 64,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: gender == 'F'
-                                  ? const [
-                                      Color(0xFFD4537E),
-                                      Color(0xFFED93B1)
-                                    ]
-                                  : const [C.accent, C.accentAlt],
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: gender == 'F'
-                                    ? const Color(0x59D4537E)
-                                    : const Color(0x59E8372D),
-                                blurRadius: 20,
-                                offset: const Offset(0, 4),
-                              )
-                            ],
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            initials,
-                            style: const TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment:
-                                CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                name,
-                                style: TextStyle(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: -0.5,
-                                  color: C.text1(dark),
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Wrap(
-                                spacing: 8,
-                                children: [
-                                  _Badge(event, dark),
-                                  _Badge(
-                                      gender == 'F' ? 'Women' : 'Men',
-                                      dark),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        GestureDetector(
-                          onTap: () => Navigator.pop(context),
-                          child: Container(
-                            width: 32,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: C.surface2(dark),
-                            ),
-                            child: Icon(Icons.close,
-                                size: 14, color: C.text2(dark)),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 28),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _StatCard(
-                            label: 'Personal Best',
-                            value: bestDisplay,
-                            accent: true,
-                            dark: dark,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _StatCard(
-                            label: 'Event',
-                            value: event,
-                            dark: dark,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _StatCard(
-                            label: 'Improvement',
-                            value: delta > 0
-                                ? '+${delta.toStringAsFixed(2)}%'
-                                : '—',
-                            accent: delta > 0,
-                            dark: dark,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                    GestureDetector(
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => AthleteProfileScreen(
-                              athleteId: e['athlete_id'] ?? '',
-                              athleteName: e['profiles']?['full_name'] ?? 'Unknown',
-                              gender: e['profiles']?['gender'] ?? 'M',
-                            ),
-                          ),
-                        );
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        decoration: BoxDecoration(
-                          color: C.accent,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        alignment: Alignment.center,
-                        child: const Text(
-                          'View Full Profile',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-class _Badge extends StatelessWidget {
-  final String text;
-  final bool dark;
-
-  const _Badge(this.text, this.dark);
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-      decoration: BoxDecoration(
-        color: C.surface2(dark),
-        borderRadius: BorderRadius.circular(100),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: C.text2(dark),
-        ),
-      ),
-    );
-  }
-}
-
-class _StatCard extends StatelessWidget {
-  final String label;
-  final String value;
-  final bool accent;
-  final bool dark;
-
-  const _StatCard({
-    required this.label,
-    required this.value,
-    this.accent = false,
-    required this.dark,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassCard(
-      forceDark: dark,
-      child: Padding(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-        child: Column(
-          children: [
-            Text(
-              label.toUpperCase(),
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w500,
-                letterSpacing: 0.5,
-                color: C.text3(dark),
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.5,
-                color: accent ? C.accent : C.text1(dark),
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
       ),
     );
   }

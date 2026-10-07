@@ -1,12 +1,316 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'design_system.dart';
 import 'pr_stats.dart';
+import 'prefs.dart';
 import 'team_data.dart';
 
 final _supabase = Supabase.instance.client;
+
+/// A leaderboard result to lead the profile sheet with, so the peek has
+/// something to show before the profile loads.
+class ProfileFocus {
+  final String event;
+  final String? display;
+  final num? meters;
+  final double improvementPct;
+
+  const ProfileFocus({
+    required this.event,
+    this.display,
+    this.meters,
+    this.improvementPct = 0,
+  });
+}
+
+/// Connects a profile to the draggable sheet hosting it.
+class ProfileSheet {
+  final ScrollController scrollController;
+
+  /// 0 at the peek height, 1 at full screen.
+  final ValueListenable<double> progress;
+
+  /// Animates the sheet up to full screen.
+  final VoidCallback expand;
+
+  const ProfileSheet({
+    required this.scrollController,
+    required this.progress,
+    required this.expand,
+  });
+}
+
+/// How far a profile sheet has risen over the screen that opened it: 0 at
+/// card height (or with no sheet open), 1 fully up. Screens wrapped in
+/// [SheetBackdrop] shrink back as it rises.
+final sheetDepth = ValueNotifier<double>(0);
+
+/// Recedes [child] behind a rising profile sheet, like iOS card sheets.
+class SheetBackdrop extends StatelessWidget {
+  final Widget child;
+
+  const SheetBackdrop({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: Colors.black,
+      child: ValueListenableBuilder<double>(
+        valueListenable: sheetDepth,
+        // Repaint boundary so the transform only recomposites the screen.
+        child: RepaintBoundary(child: child),
+        builder: (context, t, child) => Transform.scale(
+          scale: 1 - 0.07 * t,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(18 * t),
+            clipBehavior: t > 0 ? Clip.antiAlias : Clip.none,
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Opens a profile as a floating card at the bottom of the screen. Dragging
+/// it up docks it into a full-height card over the receding screen;
+/// dragging it down dismisses it.
+Future<void> showAthleteSheet(
+  BuildContext context, {
+  required String athleteId,
+  required String athleteName,
+  required String gender,
+  ProfileFocus? focus,
+}) {
+  HapticFeedback.selectionClick();
+  // Modal sheets don't see the status bar inset, and callers inside a
+  // SafeArea have it zeroed out, so read it off the screen itself.
+  final view = View.of(context);
+  final insets = EdgeInsets.fromViewPadding(view.padding, view.devicePixelRatio);
+  return showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    elevation: 0,
+    barrierColor: Colors.black.withValues(alpha: 0.4),
+    // A little overshoot so the card pops into place.
+    sheetAnimationStyle: AnimationStyle(
+      duration: const Duration(milliseconds: 420),
+      curve: const Cubic(0.2, 0.9, 0.3, 1.06),
+      reverseDuration: const Duration(milliseconds: 260),
+    ),
+    builder: (_) => _AthleteSheet(
+      safeTop: insets.top,
+      safeBottom: insets.bottom,
+      athleteId: athleteId,
+      athleteName: athleteName,
+      gender: gender,
+      focus: focus,
+    ),
+  );
+}
+
+class _AthleteSheet extends StatefulWidget {
+  final double safeTop;
+  final double safeBottom;
+  final String athleteId;
+  final String athleteName;
+  final String gender;
+  final ProfileFocus? focus;
+
+  const _AthleteSheet({
+    required this.safeTop,
+    required this.safeBottom,
+    required this.athleteId,
+    required this.athleteName,
+    required this.gender,
+    this.focus,
+  });
+
+  @override
+  State<_AthleteSheet> createState() => _AthleteSheetState();
+}
+
+class _AthleteSheetState extends State<_AthleteSheet> {
+  // Card shape at its two resting points.
+  static const _cardMargin = 8.0;
+  static const _cardRadius = 36.0;
+  static const _dockedRadius = 16.0;
+
+  final _controller = DraggableScrollableController();
+  final _progress = ValueNotifier<double>(0);
+  ValueNotifier<double>? _size;
+  Animation<double>? _route;
+  double _max = 1;
+  bool _wasFull = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _progress.addListener(_syncDepth);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Follow the route's animation too, so the screen behind springs back
+    // as the sheet slides away instead of snapping once it's gone.
+    final route = ModalRoute.of(context)?.animation;
+    if (route != _route) {
+      _route?.removeListener(_syncDepth);
+      _route = route?..addListener(_syncDepth);
+    }
+  }
+
+  void _syncDepth() => sheetDepth.value = _progress.value * (_route?.value ?? 1);
+
+  @override
+  void dispose() {
+    _route?.removeListener(_syncDepth);
+    sheetDepth.value = 0;
+    _controller.dispose();
+    _progress.dispose();
+    _size?.dispose();
+    super.dispose();
+  }
+
+  void _expand() {
+    HapticFeedback.selectionClick();
+    _controller.animateTo(_max, duration: const Duration(milliseconds: 420), curve: kSpring);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final screenH = MediaQuery.sizeOf(context).height;
+
+    // Docked, the card stops just under the status bar so the receding
+    // screen shows above it.
+    _max = ((screenH - widget.safeTop - _cardMargin) / screenH).clamp(0.5, 1.0);
+
+    // Tall enough for the header card, the focus row (or stats) and the
+    // swipe-up hint, clear of the home indicator; taller with bigger text.
+    final textGrowth = (MediaQuery.textScalerOf(context).scale(14) / 14 - 1).clamp(0.0, 1.0);
+    final bottomRoom = math.max(16.0, widget.safeBottom - 4);
+    final peekPx = 306 + textGrowth * 90 + _cardMargin + bottomRoom;
+    final peek = (peekPx / screenH).clamp(0.25, _max - 0.05);
+    final size = _size ??= ValueNotifier(peek);
+
+    return NotificationListener<DraggableScrollableNotification>(
+      onNotification: (n) {
+        size.value = n.extent;
+        _progress.value = ((n.extent - peek) / (_max - peek)).clamp(0.0, 1.0);
+        final full = n.extent > _max - 0.001;
+        if (full && !_wasFull) HapticFeedback.lightImpact();
+        _wasFull = full;
+        return false;
+      },
+      child: DraggableScrollableSheet(
+        controller: _controller,
+        expand: false,
+        initialChildSize: peek,
+        // Below the card it closes rather than resting smaller.
+        minChildSize: 0,
+        maxChildSize: _max,
+        snap: true,
+        snapSizes: [peek],
+        snapAnimationDuration: const Duration(milliseconds: 320),
+        builder: (context, scrollController) {
+          final profile = MediaQuery.removePadding(
+            context: context,
+            removeTop: true,
+            removeBottom: true,
+            child: AthleteProfileScreen(
+              athleteId: widget.athleteId,
+              athleteName: widget.athleteName,
+              gender: widget.gender,
+              focus: widget.focus,
+              sheet: ProfileSheet(
+                scrollController: scrollController,
+                progress: _progress,
+                expand: _expand,
+              ),
+            ),
+          );
+          // Floating card at rest; docks edge to edge as it rises. Only the
+          // clip changes, so the profile isn't laid out again every frame.
+          return ValueListenableBuilder<double>(
+            valueListenable: _progress,
+            child: profile,
+            builder: (context, p, child) {
+              final shape = _CardShape(
+                margin: _cardMargin * (1 - p),
+                topRadius: _cardRadius + (_dockedRadius - _cardRadius) * p,
+                bottomRadius: _cardRadius * (1 - p),
+              );
+              return PhysicalShape(
+                clipper: shape,
+                clipBehavior: Clip.antiAlias,
+                color: C.sheet(dark),
+                elevation: 10,
+                shadowColor: Colors.black.withValues(alpha: dark ? 0.5 : 0.18),
+                child: CustomPaint(
+                  foregroundPainter: _CardOutline(shape, C.border(dark)),
+                  child: child,
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _CardShape extends CustomClipper<Path> {
+  final double margin;
+  final double topRadius;
+  final double bottomRadius;
+
+  const _CardShape({required this.margin, required this.topRadius, required this.bottomRadius});
+
+  RRect rrect(Size size) => RRect.fromRectAndCorners(
+        Rect.fromLTRB(margin, 0, size.width - margin, size.height - margin),
+        topLeft: Radius.circular(topRadius),
+        topRight: Radius.circular(topRadius),
+        bottomLeft: Radius.circular(bottomRadius),
+        bottomRight: Radius.circular(bottomRadius),
+      );
+
+  @override
+  Path getClip(Size size) => Path()..addRRect(rrect(size));
+
+  @override
+  bool shouldReclip(_CardShape old) =>
+      old.margin != margin || old.topRadius != topRadius || old.bottomRadius != bottomRadius;
+}
+
+/// Hairline around the card so its edge shows against the dimmed screen.
+class _CardOutline extends CustomPainter {
+  final _CardShape shape;
+  final Color color;
+
+  const _CardOutline(this.shape, this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRRect(
+      shape.rrect(size).deflate(0.25),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.5
+        ..color = color,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_CardOutline old) =>
+      old.color != color || old.shape.shouldReclip(shape);
+}
 
 class AthleteProfileScreen extends StatefulWidget {
   final String athleteId;
@@ -14,12 +318,20 @@ class AthleteProfileScreen extends StatefulWidget {
   final String gender;
   final bool showBackButton;
 
+  /// The leaderboard result that was tapped, shown in the sheet's peek.
+  final ProfileFocus? focus;
+
+  /// Set when shown inside [showAthleteSheet] instead of as a page.
+  final ProfileSheet? sheet;
+
   const AthleteProfileScreen({
     super.key,
     required this.athleteId,
     required this.athleteName,
     required this.gender,
     this.showBackButton = true,
+    this.focus,
+    this.sheet,
   });
 
   @override
@@ -91,7 +403,10 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
         _loading = false;
         _error = null;
         if (_prs.isNotEmpty) {
-          _selectedEvent ??= _prs.first['event'];
+          final focusEvent = widget.focus?.event;
+          _selectedEvent ??= _prs.any((pr) => pr['event'] == focusEvent)
+              ? focusEvent
+              : _prs.first['event'];
         }
       });
     } catch (_) {
@@ -138,6 +453,7 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
         .toList();
 
     final isField = isFieldEvent(event);
+    final prefs = Prefs.of(context);
     final points = <ChartPoint>[];
 
     for (final a in data) {
@@ -147,7 +463,7 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
       if (v != null && v > 0) {
         points.add(ChartPoint(
           value: v,
-          display: a['display_value'] ?? '—',
+          display: prefs.mark(event, a['display_value'], a['mark_meters']),
           meetName: a['meet_name'] ?? 'Unknown',
           date: a['meet_date'] ?? '',
         ));
@@ -178,7 +494,9 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
   }
 
   String _recordGapText(Map<String, dynamic> pr, Map<String, dynamic> record) {
-    final isField = isFieldEvent(pr['event']);
+    final event = pr['event'] as String? ?? '';
+    final isField = isFieldEvent(event);
+    final prefs = Prefs.of(context);
 
     if (isField) {
       final prMark = (pr['best_mark_meters'] as num?)?.toDouble() ?? 0;
@@ -186,7 +504,7 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
       if (prMark <= 0 || recMark <= 0) return '';
       final gap = recMark - prMark;
       if (gap <= 0) return '🏆 NEW SCHOOL RECORD';
-      return '${gap.toStringAsFixed(2)}m from record (${record['record_display']}, ${record['holder_name']} \'${(record['year_set'] ?? 0) % 100})';
+      return '${prefs.gap(event, gap)} from record (${prefs.mark(event, record['record_display'], recMark)}, ${record['holder_name']} \'${(record['year_set'] ?? 0) % 100})';
     } else {
       final prTime = (pr['best_time_seconds'] as num?)?.toDouble() ?? 0;
       final recTime = (record['record_mark_seconds'] as num?)?.toDouble() ?? 9999;
@@ -222,13 +540,19 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final name = formatName(widget.athleteName);
     final isFemale = widget.gender == 'F';
+    final sheet = widget.sheet;
+    final focus = widget.focus;
 
     return Scaffold(
-      backgroundColor: C.bg(dark),
+      backgroundColor: sheet != null ? C.sheet(dark) : C.bg(dark),
       // The header renders straight away from what the caller passed in;
       // only the sections below it wait on the network.
       body: CustomScrollView(
+              controller: sheet?.scrollController,
               slivers: [
+                if (sheet != null)
+                  _sheetBar(dark, name, sheet)
+                else
                 SliverAppBar(
                   backgroundColor: C.bg(dark),
                   elevation: 0,
@@ -286,7 +610,7 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                                       end: Alignment.bottomRight,
                                       colors: isFemale
                                           ? const [Color(0xFFD4537E), Color(0xFFED93B1)]
-                                          : const [C.accent, C.accentAlt],
+                                          : [C.accentOf(dark), C.accentAlt],
                                     ),
                                     boxShadow: [
                                       BoxShadow(
@@ -327,7 +651,7 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                                         spacing: 8,
                                         children: [
                                           if (!_loading)
-                                            _pill('${_prs.length} PRs', C.accentSoft(dark), C.accent),
+                                            _pill('${_prs.length} PRs', C.accentSoft(dark), C.accentOf(dark)),
                                           _pill(isFemale ? 'Women' : 'Men', C.surface2(dark), C.text2(dark)),
                                         ],
                                       ),
@@ -338,63 +662,27 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                             ),
                           ),
                         ),
-                        const SizedBox(height: 16),
+                        SizedBox(height: sheet != null ? 12 : 16),
+
+                        if (sheet != null) ...[
+                          if (focus != null)
+                            _focusRow(dark, focus)
+                          else if (_error == null)
+                            _statsRow(dark),
+                          _sheetHint(dark, sheet),
+                        ],
 
                         if (_loading)
-                          _buildSkeleton()
+                          _buildSkeleton(stats: sheet == null || focus != null)
                         else if (_error != null)
                           _buildError(dark)
                         else ...[
-                        // Stats row
-                        FadeSlideIn(
-                          delay: const Duration(milliseconds: 60),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: _miniStat(
-                                  label: 'PRs',
-                                  value: '${_prs.length}',
-                                  icon: Icons.emoji_events_outlined,
-                                  dark: dark,
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: _miniStat(
-                                  label: 'Best Imp.',
-                                  value: _bestImprovement > 0
-                                      ? '+${_bestImprovement.toStringAsFixed(1)}%'
-                                      : '—',
-                                  icon: Icons.trending_up,
-                                  dark: dark,
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: _miniStat(
-                                  label: 'Meets',
-                                  value: '${_appearances.map((a) => a['meet_name']).toSet().length}',
-                                  icon: Icons.calendar_today_outlined,
-                                  dark: dark,
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: _miniStat(
-                                  label: _team == null
-                                      ? 'Points'
-                                      : '${_team!.currentSeason.shortLabel} pts',
-                                  value: _team == null
-                                      ? '—'
-                                      : '${_team!.pointsFor(widget.athleteId, _team!.currentSeason)}',
-                                  icon: Icons.bolt_outlined,
-                                  dark: dark,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 28),
+                        // Stats row (in a sheet without a focus result it's
+                        // already in the peek above)
+                        if (sheet == null || focus != null) ...[
+                          _statsRow(dark),
+                          const SizedBox(height: 28),
+                        ],
 
                         // Trend chart
                         if (_prs.isNotEmpty) ...[
@@ -432,7 +720,7 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                                             duration: const Duration(milliseconds: 200),
                                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                                             decoration: BoxDecoration(
-                                              color: sel ? C.accent : C.surface2(dark),
+                                              color: sel ? C.accentOf(dark) : C.surface2(dark),
                                               borderRadius: BorderRadius.circular(100),
                                             ),
                                             child: Text(
@@ -586,8 +874,8 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                                               ),
                                             ),
                                             Text(
-                                              '${max['weight_lbs']} lbs',
-                                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: C.accent, letterSpacing: -0.5),
+                                              Prefs.of(context).weight(max['weight_lbs'] as num? ?? 0),
+                                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: C.accentOf(dark), letterSpacing: -0.5),
                                             ),
                                           ],
                                         ),
@@ -629,20 +917,186 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
       ..sort((a, b) => a.gapPct.compareTo(b.gapPct));
   }
 
-  Widget _buildSkeleton() {
+  /// Grab handle and close button, pinned while the sheet's content scrolls.
+  /// The name fades in once the header card scrolls away.
+  Widget _sheetBar(bool dark, String name, ProfileSheet sheet) {
+    final scroll = sheet.scrollController;
+    return SliverAppBar(
+      primary: false,
+      pinned: true,
+      toolbarHeight: 48,
+      backgroundColor: C.sheet(dark),
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      automaticallyImplyLeading: false,
+      centerTitle: true,
+      flexibleSpace: Align(
+        alignment: Alignment.topCenter,
+        child: Container(
+          margin: const EdgeInsets.only(top: 8),
+          width: 36,
+          height: 5,
+          decoration: BoxDecoration(
+            color: C.text3(dark).withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(3),
+          ),
+        ),
+      ),
+      title: ListenableBuilder(
+        listenable: scroll,
+        builder: (_, _) {
+          final offset = scroll.hasClients ? scroll.offset : 0.0;
+          return Opacity(
+            opacity: ((offset - 90) / 40).clamp(0.0, 1.0),
+            child: Text(
+              name,
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: C.text1(dark)),
+            ),
+          );
+        },
+      ),
+      actions: [
+        Padding(
+          padding: const EdgeInsets.only(right: 16, top: 6),
+          child: PressScale(
+            onTap: () => Navigator.pop(context),
+            child: Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(shape: BoxShape.circle, color: C.surface2(dark)),
+              child: Icon(Icons.close, size: 15, color: C.text2(dark)),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// "Swipe up" affordance under the peek. Fades out as the sheet rises and
+  /// opens the full profile when tapped.
+  Widget _sheetHint(bool dark, ProfileSheet sheet) {
+    return ValueListenableBuilder<double>(
+      valueListenable: sheet.progress,
+      builder: (_, t, child) => Opacity(opacity: (1 - t * 3).clamp(0.0, 1.0), child: child),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: sheet.expand,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.keyboard_arrow_up_rounded, size: 18, color: C.text3(dark)),
+              const SizedBox(width: 4),
+              Text(
+                'Swipe up for full profile',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: C.text3(dark)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _focusRow(bool dark, ProfileFocus f) {
+    final improved = f.improvementPct > 0;
+    return Row(
+      children: [
+        Expanded(
+          child: _FocusStat(
+            label: 'Personal Best',
+            value: Prefs.of(context).mark(f.event, f.display, f.meters),
+            accent: true,
+            dark: dark,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(child: _FocusStat(label: 'Event', value: f.event, dark: dark)),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _FocusStat(
+            label: 'Improvement',
+            value: improved ? '+${f.improvementPct.toStringAsFixed(2)}%' : '—',
+            accent: improved,
+            dark: dark,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _statsRow(bool dark) {
+    if (_loading) return SkeletonPulse(child: _statsSkeleton());
+    return FadeSlideIn(
+      delay: const Duration(milliseconds: 60),
+      child: Row(
+        children: [
+          Expanded(
+            child: _miniStat(
+              label: 'PRs',
+              value: '${_prs.length}',
+              icon: Icons.emoji_events_outlined,
+              dark: dark,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _miniStat(
+              label: 'Best Imp.',
+              value: _bestImprovement > 0
+                  ? '+${_bestImprovement.toStringAsFixed(1)}%'
+                  : '—',
+              icon: Icons.trending_up,
+              dark: dark,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _miniStat(
+              label: 'Meets',
+              value: '${_appearances.map((a) => a['meet_name']).toSet().length}',
+              icon: Icons.calendar_today_outlined,
+              dark: dark,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _miniStat(
+              label: _team == null
+                  ? 'Points'
+                  : '${_team!.currentSeason.shortLabel} pts',
+              value: _team == null
+                  ? '—'
+                  : '${_team!.pointsFor(widget.athleteId, _team!.currentSeason)}',
+              icon: Icons.bolt_outlined,
+              dark: dark,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statsSkeleton() => Row(
+        children: [
+          for (var i = 0; i < 4; i++) ...[
+            if (i > 0) const SizedBox(width: 10),
+            const Expanded(child: SkeletonBox(height: 78, radius: 16)),
+          ],
+        ],
+      );
+
+  Widget _buildSkeleton({bool stats = true}) {
     return SkeletonPulse(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              for (var i = 0; i < 4; i++) ...[
-                if (i > 0) const SizedBox(width: 10),
-                const Expanded(child: SkeletonBox(height: 78, radius: 16)),
-              ],
-            ],
-          ),
-          const SizedBox(height: 28),
+          if (stats) ...[
+            _statsSkeleton(),
+            const SizedBox(height: 28),
+          ],
           const SkeletonBox(width: 110, height: 12),
           const SizedBox(height: 12),
           const SkeletonBox(height: 280, radius: 16),
@@ -670,7 +1124,7 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                 decoration: BoxDecoration(
-                  color: C.accent,
+                  color: C.accentOf(dark),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Text(
@@ -738,7 +1192,7 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                 const SizedBox(height: 10),
                 ...results.map((r) {
                   final event = r['event'] ?? '';
-                  final display = r['display_value'] ?? '—';
+                  final display = Prefs.of(context).mark(event, r['display_value'], r['mark_meters']);
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Row(
@@ -861,7 +1315,7 @@ class _InteractiveTrendChartState extends State<InteractiveTrendChart> {
           children: [
             Text(
               prPoint.display,
-              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: C.accent, letterSpacing: -1),
+              style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: C.accentOf(dark), letterSpacing: -1),
             ),
             const SizedBox(width: 8),
             Text('PR', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: C.text3(dark))),
@@ -1138,7 +1592,7 @@ class _TrendLinePainter extends CustomPainter {
     if (prIdx >= 0) {
       final prY = positions[prIdx].dy;
       final dp = Paint()
-        ..color = C.accent.withValues(alpha: 0.3)
+        ..color = C.accentOf(dark).withValues(alpha: 0.3)
         ..strokeWidth = 1;
       const dw = 6.0;
       const ds = 4.0;
@@ -1166,7 +1620,7 @@ class _TrendLinePainter extends CustomPainter {
         ..shader = LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [C.accent.withValues(alpha: 0.12), C.accent.withValues(alpha: 0.0)],
+          colors: [C.accentOf(dark).withValues(alpha: 0.12), C.accentOf(dark).withValues(alpha: 0.0)],
         ).createShader(Rect.fromLTWH(0, 0, size.width, size.height)),
     );
 
@@ -1181,7 +1635,7 @@ class _TrendLinePainter extends CustomPainter {
     canvas.drawPath(
       lp,
       Paint()
-        ..color = C.accent
+        ..color = C.accentOf(dark)
         ..strokeWidth = 2.5
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
@@ -1205,7 +1659,7 @@ class _TrendLinePainter extends CustomPainter {
       final r = isActive ? 6.0 : isPR ? 5.0 : 3.0;
       final a = isActive || isPR ? 1.0 : 0.5;
 
-      canvas.drawCircle(positions[i], r, Paint()..color = C.accent.withValues(alpha: a));
+      canvas.drawCircle(positions[i], r, Paint()..color = C.accentOf(dark).withValues(alpha: a));
 
       if (isActive || isPR) {
         canvas.drawCircle(
@@ -1327,6 +1781,51 @@ class _FoldableSectionState extends State<_FoldableSection> with SingleTickerPro
   }
 }
 
+// ─── Focus stat ─────────────────────────────────────────────────────────────
+
+class _FocusStat extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool accent;
+  final bool dark;
+
+  const _FocusStat({required this.label, required this.value, this.accent = false, required this.dark});
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassCard(
+      forceDark: dark,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+        child: Column(
+          children: [
+            Text(
+              label.toUpperCase(),
+              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w500, letterSpacing: 0.5, color: C.text3(dark)),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            // Long event names and imperial marks shrink rather than wrap.
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                value,
+                maxLines: 1,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.5,
+                  color: accent ? C.accentOf(dark) : C.text1(dark),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // ─── Rival row ──────────────────────────────────────────────────────────────
 
 class _RivalRow extends StatelessWidget {
@@ -1374,7 +1873,7 @@ class _RivalRow extends StatelessWidget {
                     style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: C.text1(dark)),
                   ),
                   Text(
-                    '${rival.event} · ${rival.theirDisplay}',
+                    '${rival.event} · ${Prefs.of(context).mark(rival.event, rival.theirDisplay, rival.theirValue)}',
                     style: TextStyle(fontSize: 11, color: C.text3(dark)),
                   ),
                 ],
@@ -1384,12 +1883,12 @@ class _RivalRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(
-                  formatGap(rival.event, rival.gap),
+                  Prefs.of(context).gap(rival.event, rival.gap),
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                     letterSpacing: -0.4,
-                    color: rival.isAhead ? C.accent : C.text1(dark),
+                    color: rival.isAhead ? C.accentOf(dark) : C.text1(dark),
                   ),
                 ),
                 Text(
@@ -1455,7 +1954,7 @@ class _PRRow extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(pr['best_display'] ?? '—', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: C.accent, letterSpacing: -0.5)),
+                  Text(Prefs.of(context).mark(pr['event'] ?? '', pr['best_display'], pr['best_mark_meters']), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: C.accentOf(dark), letterSpacing: -0.5)),
                   if (delta > 0)
                     Text('+${delta.toStringAsFixed(1)}%', style: TextStyle(fontSize: 11, color: C.text3(dark))),
                 ],
@@ -1499,7 +1998,7 @@ class _PRRow extends StatelessWidget {
                           value: recordPct!,
                           backgroundColor: C.surface3(dark),
                           valueColor: AlwaysStoppedAnimation(
-                            recordPct! > 0.95 ? C.accent : C.text3(dark),
+                            recordPct! > 0.95 ? C.accentOf(dark) : C.text3(dark),
                           ),
                         ),
                       ),
@@ -1509,7 +2008,7 @@ class _PRRow extends StatelessWidget {
                       ? Center(
                           child: Text(
                             recordGapText!,
-                            style: const TextStyle(fontSize: 10, color: C.accent, fontWeight: FontWeight.w700),
+                            style: TextStyle(fontSize: 10, color: C.accentOf(dark), fontWeight: FontWeight.w700),
                           ),
                         )
                       : Text(
@@ -1538,7 +2037,7 @@ class _PRRow extends StatelessWidget {
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w700,
-          color: top ? C.accent : C.text2(dark),
+          color: top ? C.accentOf(dark) : C.text2(dark),
         ),
       ),
     );

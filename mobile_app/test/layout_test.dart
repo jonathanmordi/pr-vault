@@ -10,18 +10,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/sample_team.dart';
 
-const _sizes = {
-  'iPhone SE': Size(375, 667),
-  'iPhone 17': Size(402, 874),
-};
+const _sizes = {'iPhone SE': Size(375, 667), 'iPhone 17': Size(402, 874)};
 
 Widget _app(Widget home) => MaterialApp(
-      theme: ThemeData(
-        useMaterial3: true,
-        scaffoldBackgroundColor: C.bg(false),
-      ),
-      home: home,
-    );
+  theme: ThemeData(useMaterial3: true, scaffoldBackgroundColor: C.bg(false)),
+  home: home,
+);
 
 void main() {
   setUpAll(loadRealFonts);
@@ -80,4 +74,29 @@ void main() {
       expect(find.textContaining("PR'd in"), findsWidgets);
     });
   }
+
+  testWidgets('sliding the gender switch from All to F shows only women', (
+    tester,
+  ) async {
+    setSize(tester, _sizes['iPhone 17']!);
+    await tester.pumpWidget(_app(const LeaderboardScreen()));
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+    expect(find.text('Daniel Okafor'), findsWidgets);
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('All').first),
+    );
+    await gesture.moveTo(tester.getCenter(find.text('M').first));
+    await tester.pump();
+    await gesture.moveTo(tester.getCenter(find.text('F').first));
+    await tester.pump();
+    // Nothing filters until the finger lifts.
+    expect(find.text('Daniel Okafor'), findsWidgets);
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(find.text('Daniel Okafor'), findsNothing);
+    expect(find.text('Lily Chen'), findsWidgets);
+  });
 }

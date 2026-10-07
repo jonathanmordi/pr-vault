@@ -159,7 +159,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       setState(() => _linking = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to link profile: $e'), backgroundColor: C.accent),
+          SnackBar(content: Text('Failed to link profile: $e'), backgroundColor: C.accentOf(Theme.of(context).brightness == Brightness.dark)),
         );
       }
     }
@@ -181,7 +181,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (_loading) {
       return Scaffold(
         backgroundColor: C.bg(dark),
-        body: const Center(child: CircularProgressIndicator(color: C.accent, strokeWidth: 2)),
+        body: Center(child: CircularProgressIndicator(color: C.accentOf(dark), strokeWidth: 2)),
       );
     }
 
@@ -236,12 +236,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             Container(
                               width: 72,
                               height: 72,
-                              decoration: const BoxDecoration(
+                              decoration: BoxDecoration(
                                 shape: BoxShape.circle,
                                 gradient: LinearGradient(
                                   begin: Alignment.topLeft,
                                   end: Alignment.bottomRight,
-                                  colors: [C.accent, C.accentAlt],
+                                  colors: [C.accentOf(dark), C.accentAlt],
                                 ),
                                 boxShadow: [
                                   BoxShadow(color: Color(0x59E8372D), blurRadius: 20, offset: Offset(0, 4))
@@ -270,7 +270,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   const SizedBox(height: 10),
                                   Row(
                                     children: [
-                                      _pill('0 PRs', C.accentSoft(dark), C.accent),
+                                      _pill('0 PRs', C.accentSoft(dark), C.accentOf(dark)),
                                       const SizedBox(width: 8),
                                       _pill('Track', C.surface2(dark), C.text2(dark)),
                                     ],
@@ -309,11 +309,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         children: [
           Row(
             children: [
-              Icon(Icons.link, size: 16, color: C.accent),
+              Icon(Icons.link, size: 16, color: C.accentOf(dark)),
               const SizedBox(width: 8),
               Text(
                 'LINK YOUR TFRRS PROFILE',
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8, color: C.accent),
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8, color: C.accentOf(dark)),
               ),
             ],
           ),
@@ -324,7 +324,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           Container(
             height: 42,
             decoration: BoxDecoration(
-              color: dark ? const Color(0xFF2C2C2E) : const Color(0xFFEEECE9),
+              color: C.field(dark),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
@@ -368,9 +368,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
 
           if (_searching)
-            const Padding(
+            Padding(
               padding: EdgeInsets.only(top: 16),
-              child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: C.accent, strokeWidth: 2))),
+              child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: C.accentOf(dark), strokeWidth: 2))),
             ),
 
           if (_linking)
@@ -379,7 +379,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: Center(
                 child: Column(
                   children: [
-                    const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: C.accent, strokeWidth: 2)),
+                    SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: C.accentOf(dark), strokeWidth: 2)),
                     const SizedBox(height: 8),
                     Text('Linking your profile…', style: TextStyle(fontSize: 13, color: C.text3(dark))),
                   ],
@@ -453,7 +453,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Cancel', style: TextStyle(color: C.text3(dark)))),
           TextButton(
             onPressed: () { Navigator.pop(ctx); _linkProfile(tfrrsProfile); },
-            child: const Text('Link', style: TextStyle(color: C.accent, fontWeight: FontWeight.w600)),
+            child: Text('Link', style: TextStyle(color: C.accentOf(dark), fontWeight: FontWeight.w600)),
           ),
         ],
       ),
