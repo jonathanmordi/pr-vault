@@ -364,13 +364,16 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
     }).catchError((_) {});
 
     // Ranks are optional: before the list_ranks migration is applied this
-    // query fails, and the profile should still load.
-    final ranksFuture = _supabase
+    // query fails, and the profile should still load. Before the cut columns
+    // exist, fall back to ranks without the nationals projection.
+    Future<List<Map<String, dynamic>>> ranks(String columns) => _supabase
         .from('list_ranks')
-        .select('event, scope, label, season, season_year, rank, list_size')
-        .eq('athlete_id', widget.athleteId)
-        .then<List<Map<String, dynamic>>>((rows) => rows,
-            onError: (_) => const <Map<String, dynamic>>[]);
+        .select(columns)
+        .eq('athlete_id', widget.athleteId);
+    const rankColumns = 'event, scope, label, season, season_year, rank, list_size';
+    final ranksFuture = ranks('$rankColumns, mark_display, cut_rank, cut_mark')
+        .catchError((_) => ranks(rankColumns))
+        .catchError((_) => const <Map<String, dynamic>>[]);
 
     try {
       // Independent queries, so fetch them in parallel.
@@ -1965,20 +1968,21 @@ class _PRRow extends StatelessWidget {
             const SizedBox(height: 8),
             Padding(
               padding: const EdgeInsets.only(left: 52),
-              child: Row(
-                children: [
-                  for (final r in ranks) ...[
-                    _rankPill(r),
-                    const SizedBox(width: 6),
-                  ],
-                  Expanded(
-                    child: Text(
+              child: SizedBox(
+                width: double.infinity,
+                // Wraps on narrow phones once the nationals margin is in the pill.
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    for (final r in ranks) _rankPill(context, r),
+                    Text(
                       ranks.first.seasonLabel.toLowerCase(),
                       style: TextStyle(fontSize: 10, color: C.text3(dark)),
-                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],
@@ -2024,8 +2028,21 @@ class _PRRow extends StatelessWidget {
     );
   }
 
-  Widget _rankPill(ListRank r) {
-    final top = r.rank <= 10;
+  /// '#19 D3 · in by 0.08m': the rank, plus where it sits against the
+  /// projected nationals field on national lists.
+  Widget _rankPill(BuildContext context, ListRank r) {
+    final nationals = r.nationals;
+    final top = nationals?.inside ?? r.rank <= 10;
+    final gap = nationals?.gap;
+    final gapText = gap == null ? null : Prefs.of(context).gap(r.event, gap);
+    final status = switch (nationals) {
+      null => null,
+      NationalsStatus(inside: true) when gap != null && gap > 0 => 'in by $gapText',
+      NationalsStatus(inside: true) => 'in',
+      NationalsStatus() when gap == 0 => 'tied at the cut',
+      NationalsStatus() when gapText != null => '$gapText out',
+      NationalsStatus() => null,
+    };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
@@ -2033,7 +2050,7 @@ class _PRRow extends StatelessWidget {
         borderRadius: BorderRadius.circular(100),
       ),
       child: Text(
-        '#${r.rank} ${r.label}',
+        status == null ? '#${r.rank} ${r.label}' : '#${r.rank} ${r.label} · $status',
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w700,

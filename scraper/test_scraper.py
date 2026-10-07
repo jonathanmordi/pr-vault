@@ -297,6 +297,34 @@ class TestBuildRankEntries:
         ]
         assert build_rank_entries(blocks, self.ROSTER, "team", self.INFO) == []
 
+    def test_conference_lists_have_no_cut(self):
+        blocks = [{"event": "100 Meters (Men)", "rows": [self.row(1, "111")]}]
+        (entry,) = build_rank_entries(blocks, self.ROSTER, "team", self.INFO)
+        assert entry["cut_rank"] is None and entry["cut_mark"] is None
+
+    def test_national_lists_record_the_mark_at_the_cut(self):
+        rows = [self.row(i, "111" if i == 21 else str(900 + i), f"10.{i:02d}") for i in range(1, 26)]
+        info = {**self.INFO, "scope": "national", "label": "D3", "cut_rank": 22}
+        (entry,) = build_rank_entries([{"event": "100 Meters (Men)", "rows": rows}],
+                                      self.ROSTER, "team", info)
+        assert entry["rank"] == 21
+        assert entry["cut_rank"] == 22 and entry["cut_mark"] == "10.22"
+
+    def test_cut_is_per_event(self):
+        sprint = [self.row(i, "111" if i == 1 else str(900 + i), f"10.{i:02d}") for i in range(1, 4)]
+        jump = [self.row(i, "222" if i == 2 else str(800 + i), f"7.{10 - i}0m") for i in range(1, 4)]
+        info = {**self.INFO, "scope": "national", "label": "D3", "cut_rank": 2}
+        entries = build_rank_entries(
+            [{"event": "100 Meters (Men)", "rows": sprint}, {"event": "Long Jump (Men)", "rows": jump}],
+            self.ROSTER, "team", info)
+        assert {e["event"]: e["cut_mark"] for e in entries} == {"100 Meters": "10.02", "Long Jump": "7.80m"}
+
+    def test_list_shorter_than_the_cut_has_no_cut_mark(self):
+        info = {**self.INFO, "scope": "national", "label": "D3", "cut_rank": 20}
+        blocks = [{"event": "100 Meters (Men)", "rows": [self.row(1, "111"), self.row(2, "999")]}]
+        (entry,) = build_rank_entries(blocks, self.ROSTER, "team", info)
+        assert entry["cut_rank"] == 20 and entry["cut_mark"] is None
+
     def test_keeps_best_place_if_listed_twice(self):
         blocks = [{"event": "Long Jump", "rows": [self.row(7, "111", "6.40m"), self.row(3, "111", "6.80m")]}]
         (entry,) = build_rank_entries(blocks, self.ROSTER, "team", self.INFO)

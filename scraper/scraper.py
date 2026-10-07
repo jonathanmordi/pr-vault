@@ -389,6 +389,11 @@ LIST_INDEXES = {
 # (link text on the list index pages, label shown in the app)
 NATIONAL_LIST = ("NCAA Div. III", "D3")
 LIST_DEPTH = "500"  # deepest option TFRRS offers; the default is ~25-50
+# How many athletes the NCAA D3 championships take in each individual event
+# (2026: the top 20 declared indoors, top 22 outdoors). The real cut can run
+# a little deeper when qualifiers don't declare, so the app calls it a
+# projection.
+NATIONALS_FIELD = {"indoor": 20, "outdoor": 22}
 
 # TFRRS hides every event block but the first, and innerText is empty for
 # hidden elements, so read textContent.
@@ -489,14 +494,20 @@ def build_rank_entries(blocks, roster, team_id, list_info):
 
     blocks:    [{'event': str, 'rows': [{'place', 'href', 'mark', 'date'}]}]
     roster:    {tfrrs_athlete_id: profile_id}
-    list_info: scope, label, season, season_year, list_name, list_url
+    list_info: scope, label, season, season_year, list_name, list_url, and
+               cut_rank for lists with a qualifying cut (national)
     """
+    cut_rank = list_info.get('cut_rank')
     best = {}
     for block in blocks:
         event = parse_list_event(block.get('event', ''))
         rows = block.get('rows', [])
         if not event or 'relay' in event.lower():
             continue
+        # The mark of the last athlete inside the cut. A list that isn't that
+        # deep yet has no cut: everyone on it is in.
+        cut_mark = (parse_list_mark(rows[cut_rank - 1].get('mark'))
+                    if cut_rank and len(rows) >= cut_rank else None)
         for row in rows:
             athlete_id = roster.get(parse_tfrrs_athlete_id(row.get('href')))
             place = parse_place(row.get('place', ''))
@@ -516,6 +527,8 @@ def build_rank_entries(blocks, roster, team_id, list_info):
                 'rank': place,
                 'list_size': len(rows),
                 'mark_display': parse_list_mark(row.get('mark')),
+                'cut_rank': cut_rank,
+                'cut_mark': cut_mark,
                 'list_name': list_info['list_name'],
                 'list_url': list_info['list_url'],
             }
@@ -587,6 +600,22 @@ def load_roster(team_id):
     return {r["tfrrs_athlete_id"]: r["id"] for r in result.data or []}
 
 
+def save_ranks(entries):
+    try:
+        supabase.table("list_ranks").upsert(
+            entries, on_conflict="athlete_id,event,scope,season,season_year"
+        ).execute()
+    except Exception as e:
+        if 'cut_' not in str(e):
+            raise
+        # The list_rank_cuts migration hasn't been applied yet.
+        print("  NOTE: list_ranks has no cut columns yet; saving ranks without cuts")
+        supabase.table("list_ranks").upsert(
+            [{k: v for k, v in entry.items() if not k.startswith('cut_')} for entry in entries],
+            on_conflict="athlete_id,event,scope,season,season_year",
+        ).execute()
+
+
 def scrape_list_ranks(page, team_id, conference, dry_run=False):
     """Records each athlete's rank on the national and conference lists."""
     roster = load_roster(team_id)
@@ -601,6 +630,7 @@ def scrape_list_ranks(page, team_id, conference, dry_run=False):
                 continue
             entries = build_rank_entries(blocks, roster, team_id, {
                 **info, "season_year": year, "list_name": name, "list_url": info["url"],
+                "cut_rank": NATIONALS_FIELD[info["season"]] if info["scope"] == "national" else None,
             })
             depth = max((len(b['rows']) for b in blocks), default=0)
             print(f"  {name} ({info['season']} {year}): {len(entries)} ranks, "
@@ -608,8 +638,9 @@ def scrape_list_ranks(page, team_id, conference, dry_run=False):
 
             if dry_run:
                 for e in sorted(entries, key=lambda e: e['rank'])[:5]:
+                    cut = f"  (cut #{e['cut_rank']}: {e['cut_mark']})" if e['cut_rank'] else ""
                     print(f"    #{e['rank']} of {e['list_size']} {e['label']}  "
-                          f"{e['event']}  {e['mark_display']}")
+                          f"{e['event']}  {e['mark_display']}{cut}")
                 continue
 
             # Rewrite the whole season so athletes who were pushed off the
@@ -621,9 +652,7 @@ def scrape_list_ranks(page, team_id, conference, dry_run=False):
                 .eq("season_year", year) \
                 .execute()
             if entries:
-                supabase.table("list_ranks").upsert(
-                    entries, on_conflict="athlete_id,event,scope,season,season_year"
-                ).execute()
+                save_ranks(entries)
         except Exception as e:
             print(f"  WARNING: skipped {info['url']}: {e}")
         page.wait_for_timeout(3000)
