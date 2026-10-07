@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-
-// ─── Theme mode notifier ──────────────────────────────────────────────────────
-final themeModeNotifier = ValueNotifier<ThemeMode>(ThemeMode.system);
+import 'package:flutter/services.dart';
 
 // ─── Spring curve ─────────────────────────────────────────────────────────────
 const kSpring = SpringCurve();
@@ -16,35 +14,48 @@ class SpringCurve extends Curve {
 
 // ─── Color system ─────────────────────────────────────────────────────────────
 class C {
-  static const accent = Color(0xFFB80C09);
   static const accentAlt = Color(0xFFE8372D);
 
-    static Color bg(bool dark) =>
-      dark ? const Color(0xFF0F0F0F) : const Color(0xFFF8F7F4);
+  /// Brand red. Dark mode uses the brighter red so it doesn't go muddy on
+  /// dark cards.
+  static Color accentOf(bool dark) => dark ? accentAlt : const Color(0xFFC8140F);
+
+  // Neutral greys; the old olive-tinted ones made both themes look muddy.
+  static Color bg(bool dark) =>
+      dark ? const Color(0xFF000000) : const Color(0xFFF2F2F5);
 
   static Color surface(bool dark) =>
       dark ? const Color(0xFF1C1C1E) : const Color(0xFFFFFFFF);
 
   static Color surface2(bool dark) =>
-      dark ? const Color(0xFF2C2C2E) : const Color(0xFFF0EDEA);
+      dark ? const Color(0xFF2C2C2E) : const Color(0xFFEEEEF1);
 
   static Color surface3(bool dark) =>
-      dark ? const Color(0xFF3A3A3C) : const Color(0xFFE8E5E2);
+      dark ? const Color(0xFF3A3A3C) : const Color(0xFFE4E4E8);
+
+  /// Bottom sheets. Lifted off black in dark mode so the sheet's edge shows
+  /// against the dimmed screen behind it.
+  static Color sheet(bool dark) =>
+      dark ? const Color(0xFF111113) : const Color(0xFFF2F2F5);
+
+  /// Search and text field fill, sitting directly on [bg].
+  static Color field(bool dark) =>
+      dark ? const Color(0xFF1C1C1E) : const Color(0xFFE4E4E9);
 
   static Color border(bool dark) =>
-      dark ? const Color(0x1AFFFFFF) : const Color(0xFFE0DEDB);
+      dark ? const Color(0x1FFFFFFF) : const Color(0xFFE2E2E7);
 
   static Color text1(bool dark) =>
-      dark ? const Color(0xFFEFEEE6) : const Color(0xFF141301);
+      dark ? const Color(0xFFF5F5F7) : const Color(0xFF111114);
 
   static Color text2(bool dark) =>
-      dark ? const Color(0xFF9E9C8A) : const Color(0xFF5C5A4A);
+      dark ? const Color(0xFFAEAEB2) : const Color(0xFF4E4E57);
 
   static Color text3(bool dark) =>
-      dark ? const Color(0xFF5C5A4A) : const Color(0xFF9E9C8A);
+      dark ? const Color(0xFF8E8E93) : const Color(0xFF75757F);
 
   static Color accentSoft(bool dark) =>
-      dark ? const Color(0x1AB80C09) : const Color(0xFFFDECEC);
+      dark ? const Color(0x29E8372D) : const Color(0xFFFCE9E8);
 }
 
 // ─── Glass card ───────────────────────────────────────────────────────────────
@@ -295,6 +306,169 @@ class _PressScaleState extends State<PressScale>
   }
 }
 
+// ─── Segment toggle ───────────────────────────────────────────────────────────
+
+/// Pick-one pill control. Tap a segment, or press and slide: the thumb
+/// follows your finger and the segment under it is picked when you let go.
+class SegmentToggle extends StatefulWidget {
+  final List<String> options;
+  final String value;
+  final bool dark;
+  final ValueChanged<String> onChanged;
+
+  const SegmentToggle({
+    super.key,
+    required this.options,
+    required this.value,
+    required this.dark,
+    required this.onChanged,
+  });
+
+  @override
+  State<SegmentToggle> createState() => _SegmentToggleState();
+}
+
+class _SegmentToggleState extends State<SegmentToggle> {
+  final _track = GlobalKey();
+
+  /// Thumb position from 0 (first segment) to 1 (last) while sliding.
+  double? _slide;
+  int? _hover;
+
+  int get _n => widget.options.length;
+
+  double get _width => _track.currentContext?.size?.width ?? 1;
+
+  int _indexAt(double x) => (x / _width * _n).floor().clamp(0, _n - 1);
+
+  double _fractionAt(double x) {
+    if (_n < 2) return 0;
+    final segment = _width / _n;
+    return ((x - segment / 2) / (_width - segment)).clamp(0.0, 1.0);
+  }
+
+  void _pick(int i) {
+    if (widget.options[i] == widget.value) return;
+    widget.onChanged(widget.options[i]);
+  }
+
+  void _startSlide(double x) {
+    HapticFeedback.lightImpact();
+    setState(() {
+      _slide = _fractionAt(x);
+      _hover = _indexAt(x);
+    });
+  }
+
+  void _moveSlide(double x) {
+    if (_slide == null) return;
+    final i = _indexAt(x);
+    if (i != _hover) HapticFeedback.selectionClick();
+    setState(() {
+      _slide = _fractionAt(x);
+      _hover = i;
+    });
+  }
+
+  void _endSlide() {
+    final i = _hover;
+    if (_slide == null || i == null) return;
+    setState(() {
+      _slide = null;
+      _hover = null;
+    });
+    _pick(i);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = widget.dark;
+    final n = _n;
+    final index = widget.options.indexOf(widget.value).clamp(0, n - 1);
+    final sliding = _slide != null;
+    final shown = _hover ?? index;
+    final at = _slide ?? (n > 1 ? index / (n - 1) : 0.5);
+
+    return Container(
+      height: 30,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: C.surface2(dark),
+        borderRadius: BorderRadius.circular(100),
+      ),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapUp: (d) {
+          final i = _indexAt(d.localPosition.dx);
+          if (widget.options[i] == widget.value) return;
+          HapticFeedback.selectionClick();
+          _pick(i);
+        },
+        onHorizontalDragStart: (d) => _startSlide(d.localPosition.dx),
+        onHorizontalDragUpdate: (d) => _moveSlide(d.localPosition.dx),
+        onHorizontalDragEnd: (_) => _endSlide(),
+        onLongPressStart: (d) => _startSlide(d.localPosition.dx),
+        onLongPressMoveUpdate: (d) => _moveSlide(d.localPosition.dx),
+        onLongPressEnd: (_) => _endSlide(),
+        // Every segment is as wide as the widest label, so 'All' doesn't get
+        // more room than 'M' or 'F'.
+        child: IntrinsicWidth(
+          key: _track,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned.fill(
+                child: AnimatedAlign(
+                  duration: sliding
+                      ? Duration.zero
+                      : const Duration(milliseconds: 320),
+                  curve: Curves.easeOutBack,
+                  alignment: Alignment(-1 + 2 * at, 0),
+                  child: FractionallySizedBox(
+                    widthFactor: 1 / n,
+                    child: AnimatedScale(
+                      scale: sliding ? 1.12 : 1,
+                      duration: const Duration(milliseconds: 200),
+                      curve: kSpring,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: C.accentOf(dark),
+                          borderRadius: BorderRadius.circular(100),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Row(
+                children: [
+                  for (var i = 0; i < n; i++)
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Center(
+                          child: AnimatedDefaultTextStyle(
+                            duration: const Duration(milliseconds: 200),
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: shown == i ? Colors.white : C.text3(dark),
+                            ),
+                            child: Text(widget.options[i]),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ─── Custom toggle ────────────────────────────────────────────────────────────
 class CustomToggle extends StatelessWidget {
   final bool value;
@@ -308,6 +482,7 @@ class CustomToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
     return GestureDetector(
       onTap: () => onChanged(!value),
       child: AnimatedContainer(
@@ -316,7 +491,7 @@ class CustomToggle extends StatelessWidget {
         height: 26,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(13),
-          color: value ? C.accent : const Color(0xFF5C5A4A),
+          color: value ? C.accentOf(dark) : C.surface3(dark),
         ),
         child: AnimatedAlign(
           duration: const Duration(milliseconds: 200),

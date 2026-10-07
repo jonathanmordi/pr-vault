@@ -355,6 +355,37 @@ void main() {
     test('formats field gaps in meters', () {
       expect(formatGap('Long Jump', 0.12), '0.12m');
     });
+
+    test('formats field gaps in inches, then feet, when imperial', () {
+      expect(formatGap('Long Jump', 0.12, imperial: true), '4.75"');
+      expect(formatGap('Shot Put', 0.4, imperial: true), "1' 3.75\"");
+    });
+
+    test('formats multi-event gaps in points', () {
+      expect(formatGap('Pentathlon', 120), '120 pts');
+      expect(formatGap('Pentathlon', 120, imperial: true), '120 pts');
+    });
+  });
+
+  group('markDisplay', () {
+    test('converts meters to feet and inches, rounding down to 1/4"', () {
+      expect(feetInches(6.22), "20' 4.75\"");
+      expect(feetInches(1.76), "5' 9.25\"");
+      expect(feetInches(1.8288), "6' 0\"");
+      expect(feetInches(11.22), "36' 9.5\"");
+    });
+
+    test('leaves metric, track times and multi-events as scraped', () {
+      expect(markDisplay('Long Jump', '6.22m', 6.22, imperial: false), '6.22m');
+      expect(markDisplay('60 Meters', '7.12', 7.12, imperial: true), '7.12');
+      expect(markDisplay('Pentathlon', '2980', 2980, imperial: true), '2980');
+      expect(markDisplay('Long Jump', 'FOUL', null, imperial: true), 'FOUL');
+    });
+
+    test('converts field marks when imperial', () {
+      expect(markDisplay('Long Jump', '6.22m', 6.22, imperial: true),
+          "20' 4.75\"");
+    });
   });
 
   group('latestRanksByEvent', () {

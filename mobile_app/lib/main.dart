@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'app_config.dart';
+import 'athlete_profile_screen.dart';
 import 'design_system.dart';
 import 'leaderboard_screen.dart';
 import 'profile_screen.dart';
 import 'settings_screen.dart';
 import 'maxes_screen.dart';
+import 'prefs.dart';
 
 Future<void> main() async {
   // Ensure Supabase is ready before rendering any widgets.
@@ -15,6 +17,7 @@ Future<void> main() async {
     url: AppConfig.supabaseUrl,
     publishableKey: AppConfig.supabaseAnonKey,
   );
+  await Prefs.instance.load();
   runApp(const PRVaultApp());
 }
 
@@ -27,85 +30,93 @@ class PRVaultApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Listen for theme changes so toggling dark mode updates immediately.
-    return ValueListenableBuilder<ThemeMode>(
-      valueListenable: themeModeNotifier,
-      builder: (context, mode, _) {
-        return MaterialApp(
-          title: 'PR Vault',
-          debugShowCheckedModeBanner: false,
-          theme: ThemeData(
-            useMaterial3: true,
-            brightness: Brightness.light,
-            scaffoldBackgroundColor: C.bg(false),
-            colorScheme: ColorScheme.light(
-              primary: C.accent,
-              secondary: C.accent,
-              surface: C.surface(false),
-              onPrimary: Colors.white,
-              onSurface: C.text1(false),
-            ),
-            appBarTheme: AppBarTheme(
-              backgroundColor: C.surface(false),
-              foregroundColor: C.text1(false),
-              elevation: 0,
-              surfaceTintColor: Colors.transparent,
-              titleTextStyle: TextStyle(
-                color: C.text1(false),
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
+    // Rebuild on settings changes so the theme switches immediately.
+    return PrefsScope(
+      child: ListenableBuilder(
+        listenable: Prefs.instance,
+        builder: (context, _) {
+          return MaterialApp(
+            title: 'PR Vault',
+            debugShowCheckedModeBanner: false,
+            theme: ThemeData(
+              useMaterial3: true,
+              brightness: Brightness.light,
+              scaffoldBackgroundColor: C.bg(false),
+              colorScheme: ColorScheme.light(
+                primary: C.accentOf(false),
+                secondary: C.accentOf(false),
+                surface: C.surface(false),
+                onPrimary: Colors.white,
+                onSurface: C.text1(false),
               ),
-            ),
-            chipTheme: ChipThemeData(
-              backgroundColor: C.surface2(false),
-              selectedColor: C.accent,
-              labelStyle: TextStyle(fontSize: 12, color: C.text2(false)),
-              secondaryLabelStyle:
-                  const TextStyle(color: Colors.white, fontSize: 12),
-              side: BorderSide.none,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(100)),
-            ),
-            dividerColor: C.border(false),
-          ),
-          darkTheme: ThemeData(
-            useMaterial3: true,
-            brightness: Brightness.dark,
-            scaffoldBackgroundColor: C.bg(true),
-            colorScheme: ColorScheme.dark(
-              primary: C.accent,
-              secondary: C.accent,
-              surface: C.surface(true),
-              onPrimary: Colors.white,
-              onSurface: C.text1(true),
-            ),
-            appBarTheme: AppBarTheme(
-              backgroundColor: C.surface(true),
-              foregroundColor: C.text1(true),
-              elevation: 0,
-              surfaceTintColor: const Color.fromARGB(0, 255, 255, 255),
-              titleTextStyle: TextStyle(
-                color: C.text1(true),
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
+              appBarTheme: AppBarTheme(
+                backgroundColor: C.surface(false),
+                foregroundColor: C.text1(false),
+                elevation: 0,
+                surfaceTintColor: Colors.transparent,
+                titleTextStyle: TextStyle(
+                  color: C.text1(false),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
+              chipTheme: ChipThemeData(
+                backgroundColor: C.surface2(false),
+                selectedColor: C.accentOf(false),
+                labelStyle: TextStyle(fontSize: 12, color: C.text2(false)),
+                secondaryLabelStyle: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                ),
+                side: BorderSide.none,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(100),
+                ),
+              ),
+              dividerColor: C.border(false),
             ),
-            chipTheme: ChipThemeData(
-              backgroundColor: C.surface2(true),
-              selectedColor: C.accent,
-              labelStyle: TextStyle(fontSize: 12, color: C.text2(true)),
-              secondaryLabelStyle:
-                  const TextStyle(color: Colors.white, fontSize: 12),
-              side: BorderSide.none,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(100)),
+            darkTheme: ThemeData(
+              useMaterial3: true,
+              brightness: Brightness.dark,
+              scaffoldBackgroundColor: C.bg(true),
+              colorScheme: ColorScheme.dark(
+                primary: C.accentOf(true),
+                secondary: C.accentOf(true),
+                surface: C.surface(true),
+                onPrimary: Colors.white,
+                onSurface: C.text1(true),
+              ),
+              appBarTheme: AppBarTheme(
+                backgroundColor: C.surface(true),
+                foregroundColor: C.text1(true),
+                elevation: 0,
+                surfaceTintColor: const Color.fromARGB(0, 255, 255, 255),
+                titleTextStyle: TextStyle(
+                  color: C.text1(true),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              chipTheme: ChipThemeData(
+                backgroundColor: C.surface2(true),
+                selectedColor: C.accentOf(true),
+                labelStyle: TextStyle(fontSize: 12, color: C.text2(true)),
+                secondaryLabelStyle: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                ),
+                side: BorderSide.none,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(100),
+                ),
+              ),
+              dividerColor: C.border(true),
             ),
-            dividerColor: C.border(true),
-          ),
-          themeMode: mode,
-          home: const AuthGate(),
-        );
-      },
+            themeMode: Prefs.instance.themeMode,
+            home: const AuthGate(),
+          );
+        },
+      ),
     );
   }
 }
@@ -166,28 +177,30 @@ class _MainShellState extends State<MainShell> {
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    return Scaffold(
-      backgroundColor: C.bg(dark),
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          for (var i = 0; i < _screens.length; i++)
-            _TabPage(
-              key: ValueKey(i),
-              active: i == _currentIndex,
-              child: _visited.contains(i) ? _screens[i] : const SizedBox(),
+    return SheetBackdrop(
+      child: Scaffold(
+        backgroundColor: C.bg(dark),
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            for (var i = 0; i < _screens.length; i++)
+              _TabPage(
+                key: ValueKey(i),
+                active: i == _currentIndex,
+                child: _visited.contains(i) ? _screens[i] : const SizedBox(),
+              ),
+            Positioned(
+              left: 24,
+              right: 24,
+              bottom: 32,
+              child: _FloatingNav(
+                currentIndex: _currentIndex,
+                onTap: _select,
+                dark: dark,
+              ),
             ),
-          Positioned(
-            left: 24,
-            right: 24,
-            bottom: 32,
-            child: _FloatingNav(
-              currentIndex: _currentIndex,
-              onTap: _select,
-              dark: dark,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -257,8 +270,9 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } on AuthException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message)));
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -292,10 +306,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   width: 72,
                   height: 72,
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
+                    gradient: LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
-                      colors: [C.accent, C.accentAlt],
+                      colors: [C.accentOf(dark), C.accentAlt],
                     ),
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: const [
@@ -366,8 +380,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Container(
                   height: 52,
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [C.accent, C.accentAlt],
+                    gradient: LinearGradient(
+                      colors: [C.accentOf(dark), C.accentAlt],
                     ),
                     borderRadius: BorderRadius.circular(14),
                     boxShadow: const [
@@ -408,7 +422,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       : "Don't have an account? Sign up",
                   style: TextStyle(
                     fontSize: 13,
-                    color: C.accent,
+                    color: C.accentOf(dark),
                     fontWeight: FontWeight.w500,
                   ),
                   textAlign: TextAlign.center,
@@ -449,7 +463,9 @@ class _InviteCodeScreenState extends State<InviteCodeScreen> {
       if (result == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Invalid invite code. Check with your coach.')),
+            const SnackBar(
+              content: Text('Invalid invite code. Check with your coach.'),
+            ),
           );
         }
         return;
@@ -457,12 +473,11 @@ class _InviteCodeScreenState extends State<InviteCodeScreen> {
 
       // AuthGate will notice the new session; simply unwind the stack.
       if (mounted) Navigator.of(context).popUntil((r) => r.isFirst);
-
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Something went wrong: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Something went wrong: $e')));
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -489,7 +504,7 @@ class _InviteCodeScreenState extends State<InviteCodeScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Spacer(),
-              Icon(Icons.key_outlined, size: 48, color: C.accent),
+              Icon(Icons.key_outlined, size: 48, color: C.accentOf(dark)),
               const SizedBox(height: 20),
               Text(
                 'Enter invite code',
@@ -520,8 +535,8 @@ class _InviteCodeScreenState extends State<InviteCodeScreen> {
                 child: Container(
                   height: 52,
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [C.accent, C.accentAlt],
+                    gradient: LinearGradient(
+                      colors: [C.accentOf(dark), C.accentAlt],
                     ),
                     borderRadius: BorderRadius.circular(14),
                     boxShadow: const [
@@ -616,8 +631,9 @@ class _InputField extends StatelessWidget {
   }
 }
 
-/// Floating nav bar that mimics an iOS-style bottom navigation.
-class _FloatingNav extends StatelessWidget {
+/// Pill-shaped tab bar. Tap a tab, or press and slide along the bar: the
+/// highlight follows your finger and the tab under it opens when you let go.
+class _FloatingNav extends StatefulWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
   final bool dark;
@@ -629,69 +645,152 @@ class _FloatingNav extends StatelessWidget {
   });
 
   @override
+  State<_FloatingNav> createState() => _FloatingNavState();
+}
+
+class _FloatingNavState extends State<_FloatingNav> {
+  static const _items = [
+    (Icons.leaderboard_outlined, Icons.leaderboard, 'Leaderboard'),
+    (Icons.person_outline, Icons.person, 'Profile'),
+    (Icons.fitness_center_outlined, Icons.fitness_center, 'Maxes'),
+    (Icons.settings_outlined, Icons.settings, 'Settings'),
+  ];
+
+  /// Gap between the bar's edge and the highlight.
+  static const _inset = 6.0;
+
+  /// Finger position while sliding, null otherwise.
+  double? _dragX;
+  int? _hover;
+
+  int _indexAt(double x, double slot) =>
+      ((x - _inset) / slot).floor().clamp(0, _items.length - 1);
+
+  void _startSlide(double x, double slot) {
+    HapticFeedback.lightImpact();
+    setState(() {
+      _dragX = x;
+      _hover = _indexAt(x, slot);
+    });
+  }
+
+  void _slide(double x, double slot) {
+    if (_dragX == null) return;
+    final i = _indexAt(x, slot);
+    if (i != _hover) HapticFeedback.selectionClick();
+    setState(() {
+      _dragX = x;
+      _hover = i;
+    });
+  }
+
+  void _endSlide() {
+    final i = _hover;
+    if (_dragX == null || i == null) return;
+    setState(() {
+      _dragX = null;
+      _hover = null;
+    });
+    widget.onTap(i);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 64,
-      decoration: BoxDecoration(
-        color: dark ? const Color(0xFF1C1C1E) : Colors.white,
-        borderRadius: BorderRadius.circular(32),
-        border: Border.all(color: C.border(dark), width: 0.5),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: dark ? 0.4 : 0.12),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
+    final dark = widget.dark;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final slot = (width - _inset * 2) / _items.length;
+        final sliding = _dragX != null;
+        final shown = _hover ?? widget.currentIndex;
+        // Sliding, the pill tracks the finger; otherwise it rests on a tab.
+        final left = sliding
+            ? (_dragX! - slot / 2).clamp(_inset, width - _inset - slot)
+            : _inset + slot * widget.currentIndex;
+
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapUp: (d) => widget.onTap(_indexAt(d.localPosition.dx, slot)),
+          onHorizontalDragStart: (d) => _startSlide(d.localPosition.dx, slot),
+          onHorizontalDragUpdate: (d) => _slide(d.localPosition.dx, slot),
+          onHorizontalDragEnd: (_) => _endSlide(),
+          onLongPressStart: (d) => _startSlide(d.localPosition.dx, slot),
+          onLongPressMoveUpdate: (d) => _slide(d.localPosition.dx, slot),
+          onLongPressEnd: (_) => _endSlide(),
+          child: AnimatedScale(
+            scale: sliding ? 1.03 : 1,
+            duration: const Duration(milliseconds: 220),
+            curve: kSpring,
+            child: Container(
+              height: 64,
+              decoration: BoxDecoration(
+                color: dark ? const Color(0xFF1C1C1E) : Colors.white,
+                borderRadius: BorderRadius.circular(32),
+                border: Border.all(color: C.border(dark), width: 0.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: dark ? 0.4 : 0.12),
+                    blurRadius: 24,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Stack(
+                children: [
+                  AnimatedPositioned(
+                    duration: sliding
+                        ? Duration.zero
+                        : const Duration(milliseconds: 380),
+                    curve: Curves.easeOutBack,
+                    left: left,
+                    top: _inset,
+                    bottom: _inset,
+                    width: slot,
+                    child: AnimatedScale(
+                      scale: sliding ? 1.08 : 1,
+                      duration: const Duration(milliseconds: 220),
+                      curve: kSpring,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: C.accentSoft(dark),
+                          borderRadius: BorderRadius.circular(100),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: _inset),
+                    child: Row(
+                      children: [
+                        for (var i = 0; i < _items.length; i++)
+                          Expanded(
+                            child: _NavItem(
+                              icon: _items[i].$1,
+                              activeIcon: _items[i].$2,
+                              label: _items[i].$3,
+                              active: shown == i,
+                              dark: dark,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          _NavItem(
-            icon: Icons.leaderboard_outlined,
-            activeIcon: Icons.leaderboard,
-            label: 'Leaderboard',
-            active: currentIndex == 0,
-            onTap: () => onTap(0),
-            dark: dark,
-          ),
-          _NavItem(
-            icon: Icons.person_outline,
-            activeIcon: Icons.person,
-            label: 'Profile',
-            active: currentIndex == 1,
-            onTap: () => onTap(1),
-            dark: dark,
-          ),
-          _NavItem(
-            icon: Icons.fitness_center_outlined,
-            activeIcon: Icons.fitness_center,
-            label: 'Maxes',
-            active: currentIndex == 2,
-            onTap: () => onTap(2),
-            dark: dark,
-          ),
-          _NavItem(
-            icon: Icons.settings_outlined,
-            activeIcon: Icons.settings,
-            label: 'Settings',
-            active: currentIndex == 3,
-            onTap: () => onTap(3),
-            dark: dark,
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
 
-/// Icon + label button that updates the current tab when tapped.
+/// Icon and label for one tab. Taps are handled by the bar.
 class _NavItem extends StatelessWidget {
   final IconData icon;
   final IconData activeIcon;
   final String label;
   final bool active;
-  final VoidCallback onTap;
   final bool dark;
 
   const _NavItem({
@@ -699,52 +798,34 @@ class _NavItem extends StatelessWidget {
     required this.activeIcon,
     required this.label,
     required this.active,
-    required this.onTap,
     required this.dark,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-        child: AnimatedContainer(
+    final color = active ? C.accentOf(dark) : C.text3(dark);
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        AnimatedScale(
+          scale: active ? 1.08 : 1.0,
           duration: const Duration(milliseconds: 250),
           curve: kSpring,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          decoration: BoxDecoration(
-            color: active ? C.accentSoft(dark) : Colors.transparent,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AnimatedScale(
-                scale: active ? 1.08 : 1.0,
-                duration: const Duration(milliseconds: 250),
-                curve: kSpring,
-                child: Icon(
-                  active ? activeIcon : icon,
-                  size: 22,
-                  color: active ? C.accent : C.text3(dark),
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight:
-                      active ? FontWeight.w600 : FontWeight.w400,
-                  color: active ? C.accent : C.text3(dark),
-                ),
-              ),
-            ],
+          child: Icon(active ? activeIcon : icon, size: 22, color: color),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.fade,
+          softWrap: false,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+            color: color,
           ),
         ),
-      ),
+      ],
     );
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'design_system.dart';
+import 'prefs.dart';
 import 'package:flutter/services.dart';
 
 final _supabase = Supabase.instance.client;
@@ -112,10 +113,10 @@ void _confirmDelete(Map<String, dynamic> entry, int index) {
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: C.accent.withValues(alpha: 0.1),
+                color: C.accentOf(dark).withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.delete_outline, color: C.accent, size: 22),
+              child: Icon(Icons.delete_outline, color: C.accentOf(dark), size: 22),
             ),
             const SizedBox(height: 14),
             Text(
@@ -124,7 +125,7 @@ void _confirmDelete(Map<String, dynamic> entry, int index) {
             ),
             const SizedBox(height: 6),
             Text(
-              '${entry['weight_lbs']} lbs will be removed',
+              '${Prefs.of(context).weight(entry['weight_lbs'] as num)} will be removed',
               style: TextStyle(fontSize: 14, color: C.text3(dark)),
             ),
             const SizedBox(height: 20),
@@ -176,7 +177,7 @@ void _confirmDelete(Map<String, dynamic> entry, int index) {
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       decoration: BoxDecoration(
-                        color: C.accent,
+                        color: C.accentOf(dark),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       alignment: Alignment.center,
@@ -224,8 +225,8 @@ void _confirmDelete(Map<String, dynamic> entry, int index) {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 14, vertical: 8),
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [C.accent, C.accentAlt],
+                        gradient: LinearGradient(
+                          colors: [C.accentOf(dark), C.accentAlt],
                         ),
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -270,7 +271,7 @@ void _confirmDelete(Map<String, dynamic> entry, int index) {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 8),
                       decoration: BoxDecoration(
-                        color: selected ? C.accent : C.surface2(dark),
+                        color: selected ? C.accentOf(dark) : C.surface2(dark),
                         borderRadius: BorderRadius.circular(100),
                       ),
                       child: Text(
@@ -292,10 +293,10 @@ void _confirmDelete(Map<String, dynamic> entry, int index) {
             // ── Leaderboard ──
             Expanded(
               child: _loading
-                  ? const Center(
-                      child: CircularProgressIndicator(color: C.accent))
+                  ? Center(
+                      child: CircularProgressIndicator(color: C.accentOf(dark)))
                   : RefreshIndicator(
-                      color: C.accent,
+                      color: C.accentOf(dark),
                       onRefresh: () {
                         HapticFeedback.lightImpact();
                         return _loadMaxes();
@@ -417,7 +418,7 @@ class _MaxRow extends StatelessWidget {
         color: isMe ? C.accentSoft(dark) : C.surface(dark),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: isMe ? C.accent.withValues(alpha: 0.3) : C.border(dark),
+          color: isMe ? C.accentOf(dark).withValues(alpha: 0.3) : C.border(dark),
           width: isMe ? 1 : 0.5,
         ),
       ),
@@ -446,7 +447,7 @@ class _MaxRow extends StatelessWidget {
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: isMe ? FontWeight.w700 : FontWeight.w500,
-                color: isMe ? C.accent : C.text1(dark),
+                color: isMe ? C.accentOf(dark) : C.text1(dark),
               ),
             ),
           ),
@@ -457,16 +458,16 @@ class _MaxRow extends StatelessWidget {
                 const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
               color: rank <= 3
-                  ? C.accent.withValues(alpha: 0.1)
+                  ? C.accentOf(dark).withValues(alpha: 0.1)
                   : C.surface2(dark),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
-              '$weight lbs',
+              Prefs.of(context).weight(weight),
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w700,
-                color: rank <= 3 ? C.accent : C.text1(dark),
+                color: rank <= 3 ? C.accentOf(dark) : C.text1(dark),
                 letterSpacing: -0.3,
               ),
             ),
@@ -502,7 +503,8 @@ class _MaxEntrySheetState extends State<_MaxEntrySheet> {
   bool _saving = false;
 
   Future<void> _save() async {
-    final weight = int.tryParse(_weightCtrl.text.trim());
+    final entered = num.tryParse(_weightCtrl.text.trim());
+    final weight = entered == null ? null : Prefs.instance.toLbs(entered);
     if (weight == null || weight <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Enter a valid weight')),
@@ -601,7 +603,7 @@ class _MaxEntrySheetState extends State<_MaxEntrySheet> {
                   padding: const EdgeInsets.symmetric(
                       horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
-                    color: selected ? C.accent : C.surface2(dark),
+                    color: selected ? C.accentOf(dark) : C.surface2(dark),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
@@ -621,7 +623,7 @@ class _MaxEntrySheetState extends State<_MaxEntrySheet> {
 
           // Weight input
           Text(
-            'Weight (lbs)',
+            'Weight (${Prefs.of(context).weightUnit})',
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
@@ -644,7 +646,7 @@ class _MaxEntrySheetState extends State<_MaxEntrySheet> {
                 Expanded(
                   child: TextField(
                     controller: _weightCtrl,
-                    keyboardType: TextInputType.number,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     autofocus: true,
                     style: TextStyle(
                       fontSize: 16,
@@ -652,7 +654,7 @@ class _MaxEntrySheetState extends State<_MaxEntrySheet> {
                       color: C.text1(dark),
                     ),
                     decoration: InputDecoration(
-                      hintText: 'e.g. 315',
+                      hintText: Prefs.of(context).liftUnits == LiftUnits.kg ? 'e.g. 140' : 'e.g. 315',
                       hintStyle:
                           TextStyle(color: C.text3(dark), fontSize: 15),
                       border: InputBorder.none,
@@ -662,7 +664,7 @@ class _MaxEntrySheetState extends State<_MaxEntrySheet> {
                   ),
                 ),
                 Text(
-                  'lbs',
+                  Prefs.of(context).weightUnit,
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -682,8 +684,8 @@ class _MaxEntrySheetState extends State<_MaxEntrySheet> {
             child: Container(
               height: 52,
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [C.accent, C.accentAlt],
+                gradient: LinearGradient(
+                  colors: [C.accentOf(dark), C.accentAlt],
                 ),
                 borderRadius: BorderRadius.circular(14),
                 boxShadow: const [

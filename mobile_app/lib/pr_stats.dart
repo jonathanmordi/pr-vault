@@ -31,8 +31,40 @@ String trackSeasonOf(DateTime d) =>
 /// outdoor season. Returns the year the season starts in.
 int academicYearOf(DateTime d) => d.month >= 8 ? d.year : d.year - 1;
 
-String formatGap(String event, double gap) {
-  if (isFieldEvent(event)) return '${gap.toStringAsFixed(2)}m';
+const kMultiEvents = ['Decathlon', 'Heptathlon', 'Pentathlon'];
+
+/// Field events marked in meters. Multi-events are scored in points.
+bool isMeasuredInMeters(String event) =>
+    isFieldEvent(event) && !kMultiEvents.contains(event);
+
+String _trimInches(double inches) => inches
+    .toStringAsFixed(2)
+    .replaceFirst(RegExp(r'0+$'), '')
+    .replaceFirst(RegExp(r'\.$'), '');
+
+/// 6.22 → `20' 4.75"`. Rounds down to the quarter inch, as NCAA
+/// conversions do, so a mark never reads longer than it was.
+String feetInches(double meters) {
+  final quarters = (meters / 0.0254 * 4 + 1e-6).floor();
+  return "${quarters ~/ 48}' ${_trimInches((quarters % 48) / 4)}\"";
+}
+
+/// The scraped display, or feet and inches when [imperial] and the event is
+/// marked in meters.
+String markDisplay(String event, String display, double? meters,
+    {required bool imperial}) {
+  if (!imperial || meters == null || meters <= 0) return display;
+  return isMeasuredInMeters(event) ? feetInches(meters) : display;
+}
+
+String formatGap(String event, double gap, {bool imperial = false}) {
+  if (isFieldEvent(event)) {
+    if (!isMeasuredInMeters(event)) return '${gap.round()} pts';
+    if (!imperial) return '${gap.toStringAsFixed(2)}m';
+    final quarters = (gap / 0.0254 * 4).round();
+    final inches = _trimInches((quarters % 48) / 4);
+    return quarters >= 48 ? "${quarters ~/ 48}' $inches\"" : '$inches"';
+  }
   if (gap >= 60) {
     final m = gap ~/ 60;
     final s = (gap - m * 60).toStringAsFixed(2).padLeft(5, '0');
