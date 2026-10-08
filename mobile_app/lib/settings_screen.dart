@@ -151,7 +151,16 @@ class SettingsScreen extends StatelessWidget {
                 child: GlassCard(
                   forceDark: dark,
                   child: PressScale(
-                    onTap: () => supabase.auth.signOut(),
+                    onTap: () async {
+                      if (await confirmAction(
+                        context,
+                        title: 'Sign out?',
+                        message: "You'll need your email and password to sign back in.",
+                        confirmLabel: 'Sign Out',
+                      )) {
+                        await api.signOut();
+                      }
+                    },
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       child: Row(
@@ -227,6 +236,14 @@ Future<void> _confirmDelete(BuildContext context, OnboardingApi api) async {
     builder: (_) => const _DeleteAccountSheet(),
   );
   if (confirmed != true || !context.mounted) return;
+  final sure = await confirmAction(
+    context,
+    title: 'Are you sure?',
+    message: "Your account will be deleted. This can't be undone.",
+    confirmLabel: 'Delete',
+    destructive: true,
+  );
+  if (!sure || !context.mounted) return;
 
   // Block the screen while deleting; the sign-out afterwards swaps the
   // whole app back to the sign-in screen.

@@ -1954,14 +1954,6 @@ class _PRRow extends StatelessWidget {
         children: [
           Row(
             children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(color: C.surface2(dark), borderRadius: BorderRadius.circular(10)),
-                alignment: Alignment.center,
-                child: Icon(Icons.emoji_events_outlined, size: 18, color: C.text2(dark)),
-              ),
-              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1983,61 +1975,55 @@ class _PRRow extends StatelessWidget {
           ),
           if (ranks.isNotEmpty) ...[
             const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.only(left: 52),
-              child: SizedBox(
-                width: double.infinity,
-                // Wraps on narrow phones once the nationals margin is in the pill.
-                child: Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    for (final r in ranks) _rankPill(context, r),
-                    Text(
-                      ranks.first.seasonLabel.toLowerCase(),
-                      style: TextStyle(fontSize: 10, color: C.text3(dark)),
-                    ),
-                  ],
-                ),
+            SizedBox(
+              width: double.infinity,
+              // Wraps on narrow phones once the nationals margin is in the pill.
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  for (final r in ranks) _rankPill(context, r),
+                  Text(
+                    ranks.first.seasonLabel.toLowerCase(),
+                    style: TextStyle(fontSize: 10, color: C.text3(dark)),
+                  ),
+                ],
               ),
             ),
           ],
           if (recordGapText != null && recordGapText!.isNotEmpty) ...[
             const SizedBox(height: 8),
-            Padding(
-              padding: EdgeInsets.only(left: isNewRecord ? 0 : 52),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (recordPct != null && !isNewRecord)
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(2),
-                      child: SizedBox(
-                        height: 3,
-                        child: LinearProgressIndicator(
-                          value: recordPct!,
-                          backgroundColor: C.surface3(dark),
-                          valueColor: AlwaysStoppedAnimation(
-                            recordPct! > 0.95 ? C.accentOf(dark) : C.text3(dark),
-                          ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (recordPct != null && !isNewRecord)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(2),
+                    child: SizedBox(
+                      height: 3,
+                      child: LinearProgressIndicator(
+                        value: recordPct!,
+                        backgroundColor: C.surface3(dark),
+                        valueColor: AlwaysStoppedAnimation(
+                          recordPct! > 0.95 ? C.accentOf(dark) : C.text3(dark),
                         ),
                       ),
                     ),
-                  const SizedBox(height: 4),
-                  isNewRecord
-                      ? Center(
-                          child: Text(
-                            recordGapText!,
-                            style: TextStyle(fontSize: 10, color: C.accentOf(dark), fontWeight: FontWeight.w700),
-                          ),
-                        )
-                      : Text(
+                  ),
+                const SizedBox(height: 4),
+                isNewRecord
+                    ? Center(
+                        child: Text(
                           recordGapText!,
-                          style: TextStyle(fontSize: 10, color: C.text3(dark)),
+                          style: TextStyle(fontSize: 10, color: C.accentOf(dark), fontWeight: FontWeight.w700),
                         ),
-                ],
-              ),
+                      )
+                    : Text(
+                        recordGapText!,
+                        style: TextStyle(fontSize: 10, color: C.text3(dark)),
+                      ),
+              ],
             ),
           ],
         ],

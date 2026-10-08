@@ -46,9 +46,13 @@ void main() {
     expect(find.text('Delete your account?'), findsNothing);
   });
 
-  testWidgets('confirming deletes the account and signs out', (tester) async {
+  testWidgets('deleting asks once more, then deletes and signs out', (tester) async {
     final api = await openSheet(tester);
     await tester.tap(find.widgetWithText(GestureDetector, 'Delete account').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Are you sure?'), findsOneWidget);
+    expect(api.deletes, 0);
+    await tester.tap(find.text('Delete'));
     await tester.pumpAndSettle();
     expect(api.deletes, 1);
     expect(api.signedOutLocally, isTrue);
@@ -58,6 +62,8 @@ void main() {
   testWidgets('a failed delete says so and stays signed in', (tester) async {
     final api = await openSheet(tester, error: Exception('offline'));
     await tester.tap(find.widgetWithText(GestureDetector, 'Delete account').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete'));
     await tester.pumpAndSettle();
     expect(api.signedOutLocally, isFalse);
     expect(find.text("Couldn't delete your account. Try again."), findsOneWidget);
@@ -78,6 +84,38 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: SettingsScreen(api: _OtherUser(api))));
     await tester.pumpAndSettle();
     expect(find.text('No team yet'), findsOneWidget);
+  });
+
+  testWidgets('backing out of the second check keeps the account', (tester) async {
+    final api = await openSheet(tester);
+    await tester.tap(find.widgetWithText(GestureDetector, 'Delete account').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(api.deletes, 0);
+    expect(api.signedOutLocally, isFalse);
+  });
+
+  testWidgets('signing out asks first', (tester) async {
+    tester.view.physicalSize = const Size(402, 874) * 3;
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    final api = FakeApi();
+    await tester.pumpWidget(MaterialApp(home: SettingsScreen(api: api)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Sign Out'));
+    await tester.pumpAndSettle();
+    expect(find.text('Sign out?'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(api.signedOut, isFalse);
+
+    await tester.tap(find.text('Sign Out'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sign Out').last);
+    await tester.pumpAndSettle();
+    expect(api.signedOut, isTrue);
   });
 }
 
