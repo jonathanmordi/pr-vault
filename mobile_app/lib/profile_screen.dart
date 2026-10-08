@@ -32,7 +32,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
+    _showSaved(TeamData.instance.cached);
+    if (_loading) {
+      TeamData.instance.restore().then((team) {
+        if (mounted && _loading) setState(() => _showSaved(team));
+      });
+    }
     _load();
+  }
+
+  /// If the team's data has your PRs you're linked, so show your profile
+  /// at once instead of waiting to check with the server.
+  void _showSaved(TeamSnapshot? team) {
+    final uid = supabase.auth.currentUser?.id;
+    if (team == null || uid == null) return;
+    final prs = team.prsOf(uid);
+    if (prs.isEmpty) return;
+    final me = prs.first['profiles'] as Map?;
+    _profile = {'full_name': me?['full_name'] ?? 'Unknown', 'gender': me?['gender'] ?? 'M'};
+    _prs = prs;
+    _linked = true;
+    _loading = false;
   }
 
   @override
@@ -53,7 +73,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    if (!_linked) setState(() => _loading = true);
     final uid = supabase.auth.currentUser?.id;
     if (uid == null) return;
 
@@ -77,7 +97,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         });
         return;
       }
-    } catch (_) {}
+    } catch (_) {
+      // Offline: keep showing the saved profile rather than the link flow.
+      if (_linked) return;
+    }
 
     final email = supabase.auth.currentUser?.email ?? '';
     final meta = supabase.auth.currentUser?.userMetadata;

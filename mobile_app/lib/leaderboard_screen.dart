@@ -58,7 +58,16 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
       }
     });
     final cached = TeamData.instance.cached;
-    if (cached != null) _apply(cached);
+    if (cached != null) {
+      _apply(cached);
+    } else {
+      // Last time's copy from the phone, while the latest downloads.
+      TeamData.instance.restore().then((snap) {
+        if (snap == null || !mounted || _snap != null) return;
+        setState(() => _apply(snap));
+        ActivityFeed.instance.refresh(snap);
+      });
+    }
     _load();
   }
 
@@ -80,7 +89,14 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
       }
     } catch (_) {
       if (!mounted) return;
-      if (_snap != null) {
+      // Offline at launch: last time's copy, if the phone has one.
+      final saved = _snap ?? await TeamData.instance.restore();
+      if (!mounted) return;
+      if (saved != null) {
+        if (_snap == null) {
+          setState(() => _apply(saved));
+          ActivityFeed.instance.refresh(saved);
+        }
         // Keep showing what we have; just say the refresh failed.
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Couldn't refresh. Check your connection.")),
@@ -335,34 +351,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                   children: [
                     _BellButton(dark: dark, onTap: _openActivity),
                     const SizedBox(width: 4),
-                    Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [C.accentOf(dark), C.accentAlt],
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x4DE8372D),
-                            blurRadius: 16,
-                            offset: Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      alignment: Alignment.center,
-                      child: const Text(
-                        'V',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
+                    const AppIcon(size: 36),
                   ],
                 ),
               ],
@@ -420,7 +409,10 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 ),
                 const SizedBox(width: 8),
                 // Season and gender in one pill: "Outdoor · All".
-                FilterPill(
+                OneTimeTip(
+                  id: 'filter_pill',
+                  message: 'Tap to switch season or gender',
+                  child: FilterPill(
                   key: const ValueKey('filters'),
                   dark: dark,
                   groups: [
@@ -436,6 +428,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                       onChanged: (g) => setState(() => _gender = g),
                     ),
                   ],
+                ),
                 ),
               ],
             ),

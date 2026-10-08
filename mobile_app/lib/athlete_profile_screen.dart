@@ -404,7 +404,39 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
   void initState() {
     super.initState();
     _team = TeamData.instance.cached;
+    final team = _team;
+    if (team != null) {
+      _showFrom(team);
+    } else {
+      TeamData.instance.restore().then((team) {
+        if (team == null || !mounted) return;
+        setState(() {
+          _team ??= team;
+          if (_loading) _showFrom(team);
+        });
+      });
+    }
     _load();
+  }
+
+  /// Shows the athlete from the team's data at once, before their own rows
+  /// arrive. Rankings and lifts aren't in it; they appear when the rest
+  /// loads.
+  void _showFrom(TeamSnapshot team) {
+    final prs = team.prsOf(widget.athleteId);
+    final appearances = team.appearancesOf(widget.athleteId);
+    if (prs.isEmpty && appearances.isEmpty) return;
+    _prs = prs;
+    _appearances = appearances;
+    _records = team.records.where((r) => r['gender'] == widget.gender).toList();
+    _loading = false;
+    final seasonPrs = _seasonPrs;
+    if (seasonPrs.isNotEmpty) {
+      final focusEvent = widget.focus?.event;
+      _selectedEvent ??= seasonPrs.any((pr) => pr['event'] == focusEvent)
+          ? focusEvent
+          : seasonPrs.first['event'];
+    }
   }
 
   Future<void> _load() async {
@@ -472,6 +504,8 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
       });
     } catch (_) {
       if (!mounted) return;
+      // Already showing the team's copy: keep it rather than an error.
+      if (!_loading) return;
       setState(() {
         _loading = false;
         _error = "Couldn't load this profile.";
@@ -1062,10 +1096,13 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                Icons.keyboard_arrow_up_rounded,
-                size: 18,
-                color: C.text3(dark),
+              // Bobs gently to show the card can be dragged up.
+              Bob(
+                child: Icon(
+                  Icons.keyboard_arrow_up_rounded,
+                  size: 18,
+                  color: C.text3(dark),
+                ),
               ),
               const SizedBox(width: 4),
               Text(

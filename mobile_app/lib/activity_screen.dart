@@ -100,7 +100,14 @@ class _ActivityScreenState extends State<ActivityScreen> {
   void initState() {
     super.initState();
     final cached = TeamData.instance.cached;
-    if (cached != null) _apply(cached, const {});
+    if (cached != null) {
+      _apply(cached, const {});
+    } else {
+      TeamData.instance.restore().then((snap) {
+        if (snap == null || !mounted || _snap != null) return;
+        setState(() => _apply(snap, const {}));
+      });
+    }
     _load();
   }
 
@@ -120,9 +127,16 @@ class _ActivityScreenState extends State<ActivityScreen> {
       setState(() => _apply(snap, fresh));
     } catch (_) {
       if (!mounted) return;
+      // Offline: last time's copy if there is one, otherwise say so.
+      final saved = _snap ?? await TeamData.instance.restore();
+      if (!mounted) return;
       setState(() {
-        _loading = false;
-        _error = "Couldn't load activity. Pull down to try again.";
+        if (saved != null) {
+          _apply(saved, const {});
+        } else {
+          _loading = false;
+          _error = "Couldn't load activity. Pull down to try again.";
+        }
       });
     }
   }

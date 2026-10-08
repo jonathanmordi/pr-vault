@@ -17,6 +17,9 @@ class FakeApi extends OnboardingApi {
   String? team;
   JoinOutcome outcome;
   bool onboarded;
+
+  /// Tests that aren't about the intro start past it.
+  bool introSeen = true;
   final String mail;
   final claimed = <String>[];
   final codes = <String>[];
@@ -35,6 +38,12 @@ class FakeApi extends OnboardingApi {
     teamChecks++;
     return team;
   }
+
+  @override
+  Future<bool> sawIntro(String userId) async => introSeen;
+
+  @override
+  Future<void> markIntroSeen(String userId) async => introSeen = true;
 
   @override
   Future<JoinOutcome> joinByEmail() async {

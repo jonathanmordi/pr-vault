@@ -13,6 +13,7 @@ import 'settings_screen.dart';
 import 'maxes_screen.dart';
 import 'onboarding.dart';
 import 'prefs.dart';
+import 'team_data.dart';
 
 Future<void> main() async {
   // Ensure Supabase is ready before rendering any widgets.
@@ -22,6 +23,11 @@ Future<void> main() async {
     publishableKey: AppConfig.supabaseAnonKey,
   );
   await Prefs.instance.load();
+  // Signing out, or deleting the account, forgets the team data saved on
+  // the phone.
+  Supabase.instance.client.auth.onAuthStateChange.listen((state) {
+    if (state.event == AuthChangeEvent.signedOut) TeamData.instance.clear();
+  });
   runApp(const PRVaultApp());
 }
 

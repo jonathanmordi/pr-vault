@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'pr_stats.dart';
+import 'team_cache.dart';
 
 final _supabase = Supabase.instance.client;
 
@@ -24,6 +25,43 @@ class TeamSnapshot {
     required this.appearances,
     required this.records,
   });
+
+  /// Bumped whenever the rows' shape changes, so an old saved copy is
+  /// dropped instead of misread.
+  static const cacheVersion = 1;
+
+  Map<String, dynamic> toCache() => {
+        'v': cacheVersion,
+        'user': userId,
+        'prs': prs,
+        'appearances': appearances,
+        'records': records,
+      };
+
+  /// A saved copy for [userId], or null if it's someone else's or from an
+  /// older version of the app.
+  static TeamSnapshot? fromCache(Map<String, dynamic> data, String userId) {
+    if (data['v'] != cacheVersion || data['user'] != userId) return null;
+    List<Map<String, dynamic>> rows(Object? list) => [
+          for (final r in (list as List? ?? const []))
+            Map<String, dynamic>.from(r as Map),
+        ];
+    return TeamSnapshot(
+      userId: userId,
+      prs: rows(data['prs']),
+      appearances: rows(data['appearances']),
+      records: rows(data['records']),
+    );
+  }
+
+  /// One athlete's PRs (sorted by event) and results (oldest first), as a
+  /// profile shows them.
+  List<Map<String, dynamic>> prsOf(String athleteId) =>
+      prs.where((p) => p['athlete_id'] == athleteId).toList()
+        ..sort((a, b) => (a['event'] as String? ?? '').compareTo(b['event'] as String? ?? ''));
+
+  List<Map<String, dynamic>> appearancesOf(String athleteId) =>
+      appearances.where((a) => a['athlete_id'] == athleteId).toList();
 
   late final Map<String, String> _names = {
     for (final p in prs)
@@ -84,7 +122,9 @@ class TeamSnapshot {
       prs.where((p) => p['athlete_id'] == athleteId || isCurrent(p['athlete_id'] as String)));
 }
 
-/// Caches the latest [TeamSnapshot] for the signed-in user.
+/// Caches the latest [TeamSnapshot] for the signed-in user, in memory and
+/// on the phone. At launch [restore] returns last time's copy right away,
+/// while [load] fetches the latest.
 class TeamData {
   TeamData._();
   static final instance = TeamData._();
@@ -92,12 +132,31 @@ class TeamData {
   TeamSnapshot? _snapshot;
   Future<TeamSnapshot>? _inFlight;
 
+  /// Whether [_snapshot] came from the server this session, rather than
+  /// from the copy saved on the phone.
+  bool _fresh = false;
+
+  /// Where the copy is saved. Replaceable for tests.
+  TeamCacheStore store = TeamCacheStore.device();
+
   /// The signed-in user's id. Replaceable so tests can run without Supabase.
   String? Function() currentUserId = () => _supabase.auth.currentUser?.id;
 
+  /// Forgets this session's data but not the saved copy, like the app
+  /// being closed and opened again. For tests.
+  @visibleForTesting
+  void newSession() {
+    _snapshot = null;
+    _fresh = false;
+    _inFlight = null;
+  }
+
   /// Replaces the cache, for tests.
   @visibleForTesting
-  void seed(TeamSnapshot snapshot) => _snapshot = snapshot;
+  void seed(TeamSnapshot snapshot) {
+    _snapshot = snapshot;
+    _fresh = true;
+  }
 
   /// The cached snapshot, unless it belongs to a different (signed-out) user.
   TeamSnapshot? get cached {
@@ -105,12 +164,43 @@ class TeamData {
     return s != null && s.userId == currentUserId() ? s : null;
   }
 
-  /// Returns the cached snapshot, or fetches one. Concurrent callers share a
-  /// single request. [force] always refetches.
+  /// The copy saved on the phone last time, or the one in memory, so a
+  /// screen can show data at once while [load] gets the latest. Null when
+  /// there's none.
+  Future<TeamSnapshot?> restore() async {
+    final c = cached;
+    if (c != null) return c;
+    final uid = currentUserId();
+    if (uid == null) return null;
+    try {
+      final data = await store.read(uid);
+      final snap = data == null ? null : TeamSnapshot.fromCache(data, uid);
+      // Unless the latest arrived meanwhile, or someone else signed in.
+      if (snap != null && cached == null && currentUserId() == uid) {
+        _snapshot = snap;
+        _fresh = false;
+      }
+    } catch (_) {
+      // A missing or unreadable copy just means downloading as before.
+    }
+    return cached;
+  }
+
+  /// Returns this session's snapshot from the server, or fetches it.
+  /// Concurrent callers share a single request. [force] always refetches.
   Future<TeamSnapshot> load({bool force = false}) {
     final c = cached;
-    if (!force && c != null) return Future.value(c);
+    if (!force && c != null && _fresh) return Future.value(c);
     return _inFlight ??= _fetch().whenComplete(() => _inFlight = null);
+  }
+
+  /// Forgets the team's data, in memory and on the phone: on sign-out.
+  Future<void> clear() async {
+    _snapshot = null;
+    _fresh = false;
+    try {
+      await store.clear();
+    } catch (_) {}
   }
 
   static const _prColumns =
@@ -160,6 +250,10 @@ class TeamData {
       records: List<Map<String, dynamic>>.from(results[2]),
     );
     _snapshot = snapshot;
+    _fresh = true;
+    if (userId != null) {
+      store.write(userId, snapshot.toCache()).catchError((_) {});
+    }
     return snapshot;
   }
 

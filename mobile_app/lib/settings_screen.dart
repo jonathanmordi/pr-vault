@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'design_system.dart';
+import 'intro.dart';
 import 'onboarding.dart';
 import 'prefs.dart';
 
@@ -125,8 +126,17 @@ class SettingsScreen extends StatelessWidget {
                         subtitle:
                             '${prefs.imperial ? 'Feet & inches' : 'Meters'} · ${prefs.weightUnit}',
                         dark: dark,
+                        divider: true,
                         trailing: _Chevron(dark),
                         onTap: () => _push(context, const UnitsSettingsScreen()),
+                      ),
+                      _SettingsRow(
+                        icon: Icons.auto_stories_outlined,
+                        title: 'How PR Vault works',
+                        subtitle: 'The quick tour',
+                        dark: dark,
+                        trailing: _Chevron(dark),
+                        onTap: () => _push(context, IntroScreen(onDone: () => Navigator.of(context).pop())),
                       ),
                     ],
                   ),
