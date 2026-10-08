@@ -65,6 +65,13 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // So the logo is there from the first frame instead of popping in.
+    precacheImage(const AssetImage(AppIcon.asset), context);
+  }
+
+  @override
   void dispose() {
     _emailCtrl.dispose();
     _passCtrl.dispose();
@@ -81,7 +88,7 @@ class _LoginScreenState extends State<LoginScreen> {
         backgroundColor: C.bg(dark),
         body: Stack(
           children: [
-            Positioned.fill(child: _HeroBackground(dark: dark)),
+            Positioned.fill(child: TrackBackdrop(dark: dark)),
             Column(
               children: [
                 Expanded(
@@ -171,111 +178,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
 // ─── Hero ─────────────────────────────────────────────────────────────────────
 
-/// Red gradient with a running track drawn across it and a runner going
-/// round the inside lane.
-class _HeroBackground extends StatefulWidget {
-  final bool dark;
-
-  const _HeroBackground({required this.dark});
-
-  @override
-  State<_HeroBackground> createState() => _HeroBackgroundState();
-}
-
-class _HeroBackgroundState extends State<_HeroBackground> with SingleTickerProviderStateMixin {
-  late final _lap = AnimationController(vsync: this, duration: const Duration(seconds: 9));
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (MediaQuery.disableAnimationsOf(context)) {
-      _lap.stop();
-    } else if (!_lap.isAnimating) {
-      _lap.repeat();
-    }
-  }
-
-  @override
-  void dispose() {
-    _lap.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = widget.dark
-        ? const [Color(0xFF6E0E0A), Color(0xFF2A0604), Color(0xFF000000)]
-        : const [Color(0xFFE8372D), Color(0xFFC8140F), Color(0xFF7E0A06)];
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(begin: Alignment.topRight, end: Alignment.bottomLeft, colors: colors),
-      ),
-      child: RepaintBoundary(
-        child: CustomPaint(painter: _TrackPainter(_lap), size: Size.infinite),
-      ),
-    );
-  }
-}
-
-class _TrackPainter extends CustomPainter {
-  final Animation<double> lap;
-
-  _TrackPainter(this.lap) : super(repaint: lap);
-
-  static const _lanes = 6;
-  static const _laneWidth = 15.0;
-
-  /// A running track's shape: two straights joined by semicircles.
-  Path _stadium(Offset center, double straight, double radius) {
-    final rect = Rect.fromCenter(center: center, width: straight + 2 * radius, height: 2 * radius);
-    return Path()..addRRect(RRect.fromRectAndRadius(rect, Radius.circular(radius)));
-  }
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width * 0.5, size.height * 0.34);
-    final straight = size.width * 0.42;
-    final inner = size.width * 0.2;
-
-    canvas.save();
-    canvas.translate(center.dx, center.dy);
-    canvas.rotate(-0.5);
-    canvas.translate(-center.dx, -center.dy);
-
-    final line = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2
-      ..color = Colors.white.withValues(alpha: 0.11);
-    for (var i = 0; i <= _lanes; i++) {
-      canvas.drawPath(_stadium(center, straight, inner + i * _laneWidth), line);
-    }
-
-    // The runner, in lane two, with a fading trail behind.
-    final lane = _stadium(center, straight, inner + 1.5 * _laneWidth);
-    final metric = lane.computeMetrics().first;
-    final length = metric.length;
-    final at = lap.value * length;
-    const dots = 24;
-    const trail = 110.0;
-    for (var k = dots; k > 0; k--) {
-      final behind = (at - trail * k / dots) % length;
-      final p = metric.getTangentForOffset(behind)?.position;
-      if (p == null) continue;
-      final fade = 1 - k / dots;
-      canvas.drawCircle(p, 1 + 2.2 * fade, Paint()..color = Colors.white.withValues(alpha: 0.5 * fade));
-    }
-    final pos = metric.getTangentForOffset(at)?.position;
-    if (pos != null) {
-      canvas.drawCircle(pos, 9, Paint()..color = Colors.white.withValues(alpha: 0.18));
-      canvas.drawCircle(pos, 4, Paint()..color = Colors.white);
-    }
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(_TrackPainter old) => old.lap != lap;
-}
-
 /// The logo, a few cards like the app's own, and the pitch. Drops the cards,
 /// then the pitch, as the keyboard or the sign-up fields take the room.
 class _HeroContent extends StatelessWidget {
@@ -292,7 +194,7 @@ class _HeroContent extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _Logo(),
+          const BrandMark(),
           Expanded(
             child: AnimatedOpacity(
               duration: const Duration(milliseconds: 250),
@@ -323,33 +225,6 @@ class _HeroContent extends StatelessWidget {
         ],
       );
     });
-  }
-}
-
-class _Logo extends StatelessWidget {
-  const _Logo();
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: 34,
-          height: 34,
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10)),
-          alignment: Alignment.center,
-          child: Text(
-            'V',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: C.accentOf(false)),
-          ),
-        ),
-        const SizedBox(width: 10),
-        const Text(
-          'PR Vault',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, letterSpacing: -0.4, color: Colors.white),
-        ),
-      ],
-    );
   }
 }
 

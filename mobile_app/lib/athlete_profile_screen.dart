@@ -1062,10 +1062,13 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                Icons.keyboard_arrow_up_rounded,
-                size: 18,
-                color: C.text3(dark),
+              // Bobs gently to show the card can be dragged up.
+              Bob(
+                child: Icon(
+                  Icons.keyboard_arrow_up_rounded,
+                  size: 18,
+                  color: C.text3(dark),
+                ),
               ),
               const SizedBox(width: 4),
               Text(

@@ -335,34 +335,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                   children: [
                     _BellButton(dark: dark, onTap: _openActivity),
                     const SizedBox(width: 4),
-                    Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [C.accentOf(dark), C.accentAlt],
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x4DE8372D),
-                            blurRadius: 16,
-                            offset: Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      alignment: Alignment.center,
-                      child: const Text(
-                        'V',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
+                    const AppIcon(size: 36),
                   ],
                 ),
               ],
@@ -420,7 +393,10 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 ),
                 const SizedBox(width: 8),
                 // Season and gender in one pill: "Outdoor · All".
-                FilterPill(
+                OneTimeTip(
+                  id: 'filter_pill',
+                  message: 'Tap to switch season or gender',
+                  child: FilterPill(
                   key: const ValueKey('filters'),
                   dark: dark,
                   groups: [
@@ -436,6 +412,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                       onChanged: (g) => setState(() => _gender = g),
                     ),
                   ],
+                ),
                 ),
               ],
             ),

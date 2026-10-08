@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // ─── Spring curve ─────────────────────────────────────────────────────────────
 const kSpring = SpringCurve();
@@ -1359,6 +1360,339 @@ class _FilterPillState extends State<FilterPill> with SingleTickerProviderStateM
       ),
     );
   }
+}
+
+// ─── Bob ──────────────────────────────────────────────────────────────────────
+
+/// Gently moves [child] up and down a few times, to hint it can be
+/// dragged that way. Still when the system asks for reduced motion.
+class Bob extends StatefulWidget {
+  final Widget child;
+  final double distance;
+
+  const Bob({super.key, required this.child, this.distance = 3});
+
+  @override
+  State<Bob> createState() => _BobState();
+}
+
+class _BobState extends State<Bob> with SingleTickerProviderStateMixin {
+  late final _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1400));
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _c.stop();
+    } else if (!_c.isAnimating && _c.value == 0) {
+      _c.repeat(count: 3);
+    }
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (context, child) => Transform.translate(
+        offset: Offset(0, -widget.distance * math.sin(_c.value * math.pi * 2).abs()),
+        child: child,
+      ),
+      child: widget.child,
+    );
+  }
+}
+
+// ─── One-time tip ────────────────────────────────────────────────────────────
+
+/// A small bubble under [child] the first time it's shown, pointing at it.
+/// It doesn't block touches: the first tap anywhere dismisses it for good.
+class OneTimeTip extends StatefulWidget {
+  /// Remembered once seen, so the tip never shows again.
+  final String id;
+  final String message;
+  final Widget child;
+
+  const OneTimeTip({super.key, required this.id, required this.message, required this.child});
+
+  @override
+  State<OneTimeTip> createState() => _OneTimeTipState();
+}
+
+class _OneTimeTipState extends State<OneTimeTip> with SingleTickerProviderStateMixin {
+  final _link = LayerLink();
+  final _portal = OverlayPortalController();
+  // A beat after the screen settles, then a soft pop in.
+  late final _appear = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100));
+  late final _intro = CurvedAnimation(parent: _appear, curve: const Interval(0.45, 1, curve: kFluid));
+
+  String get _key => 'tip_seen:${widget.id}';
+
+  @override
+  void initState() {
+    super.initState();
+    _check();
+  }
+
+  Future<void> _check() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool(_key) ?? false) return;
+    } catch (_) {
+      return;
+    }
+    if (!mounted) return;
+    setState(_portal.show);
+    _appear.forward();
+  }
+
+  Future<void> _dismiss() async {
+    if (!_portal.isShowing) return;
+    await _appear.animateBack(0, duration: const Duration(milliseconds: 180));
+    if (mounted) setState(_portal.hide);
+    try {
+      await (await SharedPreferences.getInstance()).setBool(_key, true);
+    } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    _appear.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final style = (Theme.of(context).textTheme.bodyMedium ?? const TextStyle())
+        .merge(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: dark ? Colors.black : Colors.white));
+    return CompositedTransformTarget(
+      link: _link,
+      child: OverlayPortal(
+        controller: _portal,
+        overlayChildBuilder: (context) => Stack(
+          children: [
+            // Sees the first touch anywhere without taking it.
+            Positioned.fill(
+              child: Listener(behavior: HitTestBehavior.translucent, onPointerDown: (_) => _dismiss()),
+            ),
+            CompositedTransformFollower(
+              link: _link,
+              showWhenUnlinked: false,
+              targetAnchor: Alignment.bottomRight,
+              followerAnchor: Alignment.topRight,
+              offset: const Offset(0, 10),
+              child: IgnorePointer(
+                child: AnimatedBuilder(
+                  animation: _intro,
+                  builder: (context, child) => Opacity(
+                    opacity: _intro.value.clamp(0.0, 1.0),
+                    child: Transform.scale(
+                      scale: 0.85 + 0.15 * _intro.value,
+                      alignment: Alignment.topRight,
+                      child: child,
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(right: 22),
+                        child: CustomPaint(
+                          size: const Size(16, 8),
+                          painter: _TipArrowPainter(dark ? Colors.white : const Color(0xFF1C1C1E)),
+                        ),
+                      ),
+                      Container(
+                        constraints: const BoxConstraints(maxWidth: 240),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: dark ? Colors.white : const Color(0xFF1C1C1E),
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: [
+                            BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 18, offset: const Offset(0, 6)),
+                          ],
+                        ),
+                        child: Text(widget.message, style: style),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+class _TipArrowPainter extends CustomPainter {
+  final Color color;
+  const _TipArrowPainter(this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path()
+      ..moveTo(0, size.height)
+      ..lineTo(size.width / 2, 0)
+      ..lineTo(size.width, size.height)
+      ..close();
+    canvas.drawPath(path, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(_TipArrowPainter old) => old.color != color;
+}
+
+// ─── Brand ────────────────────────────────────────────────────────────────────
+
+/// The app icon.
+class AppIcon extends StatelessWidget {
+  static const asset = 'assets/brand/icon.png';
+  final double size;
+
+  const AppIcon({super.key, this.size = 34});
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(size * 0.23),
+      child: Image.asset(asset, width: size, height: size, filterQuality: FilterQuality.medium),
+    );
+  }
+}
+
+/// The icon and "PR Vault", in white, for the red screens.
+class BrandMark extends StatelessWidget {
+  const BrandMark({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AppIcon(),
+        SizedBox(width: 10),
+        Text(
+          'PR Vault',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, letterSpacing: -0.4, color: Colors.white),
+        ),
+      ],
+    );
+  }
+}
+
+/// Red gradient with a running track drawn across it and a runner going
+/// round the inside lane: the sign-in screen and the intro.
+class TrackBackdrop extends StatefulWidget {
+  final bool dark;
+
+  const TrackBackdrop({super.key, required this.dark});
+
+  @override
+  State<TrackBackdrop> createState() => _TrackBackdropState();
+}
+
+class _TrackBackdropState extends State<TrackBackdrop> with SingleTickerProviderStateMixin {
+  late final _lap = AnimationController(vsync: this, duration: const Duration(seconds: 9));
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _lap.stop();
+    } else if (!_lap.isAnimating) {
+      _lap.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _lap.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = widget.dark
+        ? const [Color(0xFF6E0E0A), Color(0xFF2A0604), Color(0xFF000000)]
+        : const [Color(0xFFE8372D), Color(0xFFC8140F), Color(0xFF7E0A06)];
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(begin: Alignment.topRight, end: Alignment.bottomLeft, colors: colors),
+      ),
+      child: RepaintBoundary(
+        child: CustomPaint(painter: _TrackPainter(_lap), size: Size.infinite),
+      ),
+    );
+  }
+}
+
+class _TrackPainter extends CustomPainter {
+  final Animation<double> lap;
+
+  _TrackPainter(this.lap) : super(repaint: lap);
+
+  static const _lanes = 6;
+  static const _laneWidth = 15.0;
+
+  /// A running track's shape: two straights joined by semicircles.
+  Path _stadium(Offset center, double straight, double radius) {
+    final rect = Rect.fromCenter(center: center, width: straight + 2 * radius, height: 2 * radius);
+    return Path()..addRRect(RRect.fromRectAndRadius(rect, Radius.circular(radius)));
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width * 0.5, size.height * 0.34);
+    final straight = size.width * 0.42;
+    final inner = size.width * 0.2;
+
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(-0.5);
+    canvas.translate(-center.dx, -center.dy);
+
+    final line = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2
+      ..color = Colors.white.withValues(alpha: 0.11);
+    for (var i = 0; i <= _lanes; i++) {
+      canvas.drawPath(_stadium(center, straight, inner + i * _laneWidth), line);
+    }
+
+    // The runner, in lane two, with a fading trail behind.
+    final lane = _stadium(center, straight, inner + 1.5 * _laneWidth);
+    final metric = lane.computeMetrics().first;
+    final length = metric.length;
+    final at = lap.value * length;
+    const dots = 24;
+    const trail = 110.0;
+    for (var k = dots; k > 0; k--) {
+      final behind = (at - trail * k / dots) % length;
+      final p = metric.getTangentForOffset(behind)?.position;
+      if (p == null) continue;
+      final fade = 1 - k / dots;
+      canvas.drawCircle(p, 1 + 2.2 * fade, Paint()..color = Colors.white.withValues(alpha: 0.5 * fade));
+    }
+    final pos = metric.getTangentForOffset(at)?.position;
+    if (pos != null) {
+      canvas.drawCircle(pos, 9, Paint()..color = Colors.white.withValues(alpha: 0.18));
+      canvas.drawCircle(pos, 4, Paint()..color = Colors.white);
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_TrackPainter old) => old.lap != lap;
 }
 
 // ─── Full-screen steps ──────────────────────────────────────────────────────

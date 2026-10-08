@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'design_system.dart';
+import 'intro.dart';
 import 'pr_stats.dart';
 import 'team_data.dart';
 
@@ -141,11 +142,26 @@ class OnboardingApi {
       await (await SharedPreferences.getInstance()).setBool('onboarded:$userId', true);
     } catch (_) {}
   }
+
+  /// Whether this user has seen the how-it-works intro.
+  Future<bool> sawIntro(String userId) async {
+    try {
+      return (await SharedPreferences.getInstance()).getBool('intro_seen:$userId') ?? false;
+    } catch (_) {
+      return true; // without storage, don't show it every launch
+    }
+  }
+
+  Future<void> markIntroSeen(String userId) async {
+    try {
+      await (await SharedPreferences.getInstance()).setBool('intro_seen:$userId', true);
+    } catch (_) {}
+  }
 }
 
 // ─── Gate ─────────────────────────────────────────────────────────────────────
 
-enum _Stage { checking, claim, noTeam, unverified, offline, serverError, done }
+enum _Stage { checking, claim, noTeam, unverified, offline, serverError, intro, done }
 
 /// Shows [child] once the signed-in user is on a team. New users join their
 /// school's team through their verified school email, then pick themselves
@@ -178,7 +194,7 @@ class _OnboardingGateState extends State<OnboardingGate> {
   Future<void> _check() async {
     final uid = _api.userId;
     if (uid == null) return;
-    if (await _api.wasOnboarded(uid)) return _set(_Stage.done);
+    if (await _api.wasOnboarded(uid)) return _set(await _afterOnboarding(uid));
     _set(_Stage.checking);
     try {
       if (await _api.teamIdOf(uid) != null) return await _finish();
@@ -197,7 +213,18 @@ class _OnboardingGateState extends State<OnboardingGate> {
 
   Future<void> _finish() async {
     final uid = _api.userId;
-    if (uid != null) await _api.markOnboarded(uid);
+    if (uid == null) return _set(_Stage.done);
+    await _api.markOnboarded(uid);
+    _set(await _afterOnboarding(uid));
+  }
+
+  /// The how-it-works intro, once, then the app.
+  Future<_Stage> _afterOnboarding(String uid) async =>
+      await _api.sawIntro(uid) ? _Stage.done : _Stage.intro;
+
+  Future<void> _introDone() async {
+    final uid = _api.userId;
+    if (uid != null) await _api.markIntroSeen(uid);
     _set(_Stage.done);
   }
 
@@ -215,6 +242,7 @@ class _OnboardingGateState extends State<OnboardingGate> {
       _Stage.done => widget.child,
       _Stage.checking => const _Splash(),
       _Stage.claim => ClaimProfileScreen(api: _api, onDone: _finish),
+      _Stage.intro => IntroScreen(onDone: _introDone),
       _Stage.noTeam => _GateMessage(
           icon: Icons.school_outlined,
           title: "PR Vault isn't at $domain yet",
