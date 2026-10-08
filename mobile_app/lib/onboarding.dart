@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'design_system.dart';
+import 'pr_stats.dart';
 import 'team_data.dart';
 
 /// Digits in the email verification code. Matches auth.email.otp_length in
@@ -32,7 +33,19 @@ class RosterEntry {
   final String name;
   final String gender;
 
-  const RosterEntry({required this.id, required this.name, required this.gender});
+  /// False for alumni, who've dropped off the current TFRRS roster.
+  final bool onRoster;
+
+  /// As TFRRS shows it, e.g. 'SR-4'.
+  final String? classYear;
+
+  const RosterEntry({
+    required this.id,
+    required this.name,
+    required this.gender,
+    this.onRoster = true,
+    this.classYear,
+  });
 }
 
 /// The Supabase calls sign-up and onboarding make, behind one seam so the
@@ -86,6 +99,8 @@ class OnboardingApi {
           id: r['id'] as String,
           name: r['full_name'] as String? ?? '',
           gender: r['gender'] as String? ?? 'M',
+          onRoster: r['on_roster'] as bool? ?? true,
+          classYear: r['class_year'] as String?,
         ),
     ];
   }
@@ -611,6 +626,48 @@ class _ClaimProfileScreenState extends State<ClaimProfileScreen> {
     }
   }
 
+  Widget _row(RosterEntry entry, bool dark) {
+    final detail = entry.onRoster ? classYearLabel(entry.classYear) : 'Alum';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: PressScale(
+        pressedScale: 0.98,
+        onTap: _claiming == null ? () => _pick(entry) : () {},
+        child: GlassCard(
+          forceDark: dark,
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          child: Row(
+            children: [
+              InitialsAvatar(name: entry.name, gender: entry.gender, dark: dark),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      formatName(entry.name),
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: C.text1(dark)),
+                    ),
+                    if (detail != null)
+                      Text(detail, style: TextStyle(fontSize: 12, color: C.text3(dark))),
+                  ],
+                ),
+              ),
+              if (_claiming == entry.id)
+                SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(color: C.accentOf(dark), strokeWidth: 2),
+                )
+              else
+                Icon(Icons.chevron_right, size: 18, color: C.text3(dark)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
@@ -667,42 +724,27 @@ class _ClaimProfileScreenState extends State<ClaimProfileScreen> {
             else
               SliverPadding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
-                sliver: SliverList.builder(
-                  itemCount: matches.length,
-                  itemBuilder: (context, i) {
-                    final entry = matches[i];
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: PressScale(
-                        pressedScale: 0.98,
-                        onTap: _claiming == null ? () => _pick(entry) : () {},
-                        child: GlassCard(
-                          forceDark: dark,
-                          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                          child: Row(
-                            children: [
-                              InitialsAvatar(name: entry.name, gender: entry.gender, dark: dark),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  formatName(entry.name),
-                                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: C.text1(dark)),
-                                ),
-                              ),
-                              if (_claiming == entry.id)
-                                SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(color: C.accentOf(dark), strokeWidth: 2),
-                                )
-                              else
-                                Icon(Icons.chevron_right, size: 18, color: C.text3(dark)),
-                            ],
+                // Current roster first; graduates and others who've left
+                // can still find themselves under Alumni.
+                sliver: SliverList.list(
+                  children: [
+                    for (final entry in matches.where((e) => e.onRoster)) _row(entry, dark),
+                    if (matches.any((e) => !e.onRoster)) ...[
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(4, 16, 4, 10),
+                        child: Text(
+                          'ALUMNI',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.06 * 13,
+                            color: C.text3(dark),
                           ),
                         ),
                       ),
-                    );
-                  },
+                      for (final entry in matches.where((e) => !e.onRoster)) _row(entry, dark),
+                    ],
+                  ],
                 ),
               ),
             SliverToBoxAdapter(

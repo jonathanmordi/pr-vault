@@ -2,7 +2,7 @@ import os
 import re
 import sys
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from dotenv import load_dotenv
 from supabase import create_client
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
@@ -350,34 +350,124 @@ def scrape_athlete(page, tfrrs_athlete_id, athlete_id, team_id, gender, athlete_
     print(f"  Total appearances logged: {len(all_results)}")
 
 
+# The roster table (NAME, YEAR). Other tables on the team page, like top
+# marks, link athletes too, so read this one specifically.
+_ROSTER_JS = """() => {
+  const table = [...document.querySelectorAll('table')].find(t => {
+    const h = [...t.querySelectorAll('thead th')].map(th => th.textContent.trim().toUpperCase());
+    return h.length === 2 && h[0] === 'NAME' && h[1] === 'YEAR';
+  });
+  if (!table) return null;
+  return [...table.querySelectorAll('tbody tr')].map(tr => {
+    const a = tr.querySelector("a[href*='/athletes/']");
+    const cells = tr.querySelectorAll('td');
+    return {name: a ? a.textContent : '', href: a ? a.getAttribute('href') : null,
+            year: cells[1] ? cells[1].textContent : ''};
+  });
+}"""
+
+
+def parse_roster_rows(rows):
+    """Roster table rows → [{'name', 'tfrrs_id', 'year'}], once per athlete.
+    'year' is the class year as TFRRS shows it ('SR-4'), or None."""
+    athletes, seen = [], set()
+    for row in rows:
+        tfrrs_id = parse_tfrrs_athlete_id(row.get('href'))
+        name = re.sub(r'\s+', ' ', row.get('name') or '').strip()
+        if not tfrrs_id or not name or tfrrs_id in seen:
+            continue
+        seen.add(tfrrs_id)
+        athletes.append({'name': name, 'tfrrs_id': tfrrs_id,
+                         'year': (row.get('year') or '').strip() or None})
+    return athletes
+
+
 def scrape_team_roster(page, team_url, team_id):
-    """Scrapes all athlete IDs from a TFRRS team page."""
+    """Athletes on a TFRRS team's current roster, with class years.
+
+    Returns (athletes, from_roster_table). If the roster table can't be
+    found, falls back to every athlete link on the page: good enough for
+    scraping results, but not for deciding who has left the team."""
     print(f"\nFetching roster from {team_url}")
     page.goto(team_url, wait_until="domcontentloaded")
     page.wait_for_timeout(3000)
 
+    rows = page.evaluate(_ROSTER_JS)
+    if rows is not None:
+        athletes = parse_roster_rows(rows)
+        print(f"  Found {len(athletes)} athletes on roster")
+        return athletes, True
+
+    print("  WARNING: no roster table; using every athlete link on the page")
     links = page.query_selector_all("a[href*='/athletes/']")
-    seen = set()
-    athletes = []
+    athletes = parse_roster_rows([
+        {'name': link.inner_text(), 'href': link.get_attribute("href")} for link in links
+    ])
+    print(f"  Found {len(athletes)} athletes linked")
+    return athletes, False
 
-    for link in links:
-        href = link.get_attribute("href")
-        name = link.inner_text().strip()
-        if not href or not name:
-            continue
 
-        parts = href.split('/')
-        try:
-            idx = parts.index('athletes')
-            tfrrs_id = parts[idx + 1]
-            if tfrrs_id.isdigit() and tfrrs_id not in seen:
-                seen.add(tfrrs_id)
-                athletes.append({"name": name, "tfrrs_id": tfrrs_id})
-        except (ValueError, IndexError):
-            continue
+# ─── Roster status ────────────────────────────────────────────────────────────
 
-    print(f"  Found {len(athletes)} athletes on roster")
-    return athletes
+# If a roster read finds fewer than this share of the athletes currently on
+# the roster, assume the page didn't load right rather than that half the
+# team left at once.
+MIN_ROSTER_SHARE = 0.5
+
+
+def roster_changes(profiles, roster):
+    """What to change after reading the current roster.
+
+    profiles: [{'id', 'tfrrs_athlete_id', 'on_roster'}] on the team
+    roster:   {tfrrs_id: class_year} from the team pages
+    Returns (current, left): current maps class year → ids of profiles on
+    the roster now; left lists ids that were on it and no longer are.
+    """
+    current, left = {}, []
+    for p in profiles:
+        tfrrs_id = p.get('tfrrs_athlete_id')
+        if tfrrs_id in roster:
+            current.setdefault(roster[tfrrs_id], []).append(p['id'])
+        elif tfrrs_id and p.get('on_roster'):
+            left.append(p['id'])
+    return current, left
+
+
+def roster_read_looks_complete(on_roster_now, seen):
+    return on_roster_now == 0 or seen >= on_roster_now * MIN_ROSTER_SHARE
+
+
+def update_roster_status(team_id, roster, dry_run=False):
+    """Marks who's on the team's current TFRRS roster, with class years, and
+    who has left it (alumni). Showing up on the roster again undoes leaving."""
+    profiles = supabase.table("profiles") \
+        .select("id, full_name, tfrrs_athlete_id, on_roster") \
+        .eq("team_id", team_id) \
+        .not_.is_("tfrrs_athlete_id", "null") \
+        .execute().data or []
+    on_now = sum(1 for p in profiles if p['on_roster'])
+    current, left = roster_changes(profiles, roster)
+    if left and not roster_read_looks_complete(on_now, len(roster)):
+        print(f"  WARNING: the roster read found {len(roster)} athletes but {on_now} are "
+              f"on the roster; not marking anyone as gone")
+        left = []
+
+    names = {p['id']: p['full_name'] for p in profiles}
+    print(f"\nRoster: {sum(len(ids) for ids in current.values())} on the roster, "
+          f"{len(left)} newly gone")
+    for profile_id in left:
+        print(f"  left the roster: {names[profile_id]}")
+    if dry_run:
+        return
+
+    for year, ids in current.items():
+        supabase.table("profiles") \
+            .update({"on_roster": True, "left_roster_on": None, "class_year": year}) \
+            .in_("id", ids).execute()
+    if left:
+        supabase.table("profiles") \
+            .update({"on_roster": False, "left_roster_on": date.today().isoformat()}) \
+            .in_("id", left).execute()
 
 
 # ─── Performance-list ranks ───────────────────────────────────────────────────
@@ -658,7 +748,7 @@ def scrape_list_ranks(page, team_id, conference, dry_run=False):
         page.wait_for_timeout(3000)
 
 
-def run_scraper(ranks_only=False, dry_run=False):
+def run_scraper(ranks_only=False, roster_only=False, dry_run=False):
     team_urls = [
         "https://www.tfrrs.org/teams/tf/NJ_college_m_Stevens.html",
         "https://www.tfrrs.org/teams/tf/NJ_college_f_Stevens.html",
@@ -679,6 +769,8 @@ def run_scraper(ranks_only=False, dry_run=False):
         })
 
         conference = None
+        roster_ids = {}  # tfrrs_id → class year, across the team pages
+        roster_complete = True
         for team_url in team_urls:
             gender = 'F' if '_f_' in team_url else 'M'
             if ranks_only:
@@ -687,8 +779,12 @@ def run_scraper(ranks_only=False, dry_run=False):
                 conference = read_conference(page)
                 break
 
-            roster = scrape_team_roster(page, team_url, team_id)
+            roster, from_table = scrape_team_roster(page, team_url, team_id)
+            roster_complete = roster_complete and from_table and bool(roster)
+            roster_ids.update({a["tfrrs_id"]: a["year"] for a in roster})
             conference = conference or read_conference(page)
+            if roster_only:
+                continue
 
             for athlete in roster:
                 try:
@@ -727,6 +823,21 @@ def run_scraper(ranks_only=False, dry_run=False):
 
                 page.wait_for_timeout(3000)
 
+        # Roster status is extra too, and only trustworthy when every team
+        # page's roster table was read.
+        if not ranks_only:
+            if roster_complete:
+                try:
+                    update_roster_status(team_id, roster_ids, dry_run=dry_run)
+                except Exception as e:
+                    print(f"\nWARNING: roster status skipped: {e}")
+            else:
+                print("\nWARNING: couldn't read every roster table; roster status unchanged")
+        if roster_only:
+            browser.close()
+            print("\nScrape complete.")
+            return
+
         # Ranks are extra: a TFRRS layout change or a database that doesn't
         # have list_ranks yet shouldn't fail the nightly PR scrape.
         try:
@@ -741,6 +852,10 @@ def run_scraper(ranks_only=False, dry_run=False):
 
 if __name__ == "__main__":
     # --ranks-only        skip athlete pages, just refresh list ranks
-    # --dry-run           print the ranks instead of saving (implies --ranks-only)
+    # --roster-only       just read the rosters and update who's on the team
+    # --dry-run           print instead of saving (ranks, or the roster with
+    #                     --roster-only)
     dry_run = "--dry-run" in sys.argv
-    run_scraper(ranks_only=dry_run or "--ranks-only" in sys.argv, dry_run=dry_run)
+    roster_only = "--roster-only" in sys.argv
+    run_scraper(ranks_only=not roster_only and (dry_run or "--ranks-only" in sys.argv),
+                roster_only=roster_only, dry_run=dry_run)
