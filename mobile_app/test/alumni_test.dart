@@ -46,13 +46,13 @@ void main() {
     });
 
     test('alumni are no one\'s rival', () {
-      expect(sampleTeam().rivalsOf('me')['Triple Jump']?.athleteId, 'okafor');
+      expect(sampleTeam().rivalsOf('me').values.where((r) => r.event == 'Triple Jump').firstOrNull?.athleteId, 'okafor');
       final snap = sampleTeam(alumni: {'okafor'});
       expect(snap.isCurrent('okafor'), isFalse);
       expect(snap.hasAlumni, isTrue);
       expect(snap.rivalsOf('me'), isEmpty);
       // An alum still sees current teammates as rivals.
-      expect(sampleTeam(alumni: {'me'}).rivalsOf('me')['Triple Jump']?.athleteId, 'okafor');
+      expect(sampleTeam(alumni: {'me'}).rivalsOf('me').values.where((r) => r.event == 'Triple Jump').firstOrNull?.athleteId, 'okafor');
     });
   });
 

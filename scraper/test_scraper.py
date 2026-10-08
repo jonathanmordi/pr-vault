@@ -13,6 +13,9 @@ from scraper import (
     parse_mark_to_meters,
     is_field_event,
     clean_event_name,
+    parse_event_heading,
+    guess_season,
+    compute_prs,
     clean_mark,
     parse_list_event,
     parse_tfrrs_athlete_id,
@@ -131,6 +134,96 @@ class TestCleanEventName:
 
     def test_case_insensitive_tag_removal(self):
         assert clean_event_name("100 Meters (INDOOR)") == "100 Meters"
+
+
+class TestParseEventHeading:
+    @pytest.mark.parametrize("raw, expected", [
+        ("Long Jump (Indoor)    Top↑", ("Long Jump", "indoor")),
+        ("200 Meters (Outdoor)", ("200 Meters", "outdoor")),
+        ("High Jump (Outdoors)", ("High Jump", "outdoor")),
+        ("Mile (INDOORS)", ("Mile", "indoor")),
+        ("8k", ("8k", "xc")),
+        ("5K", ("5K", "xc")),
+        ("Mile", ("Mile", None)),
+    ])
+    def test_keeps_the_season(self, raw, expected):
+        assert parse_event_heading(raw) == expected
+
+
+class TestGuessSeason:
+    @pytest.mark.parametrize("event, meet, date, expected", [
+        ("8k", "Fall Classic", "2025-10-04", "xc"),
+        ("Long Jump", "AARTFC Indoor Championships", "2026-03-07", "indoor"),
+        ("Long Jump", "MAC Outdoor Championships", "2026-05-02", "outdoor"),
+        ("60 Meters", "Invite", "2026-04-01", "indoor"),
+        ("Hammer", "Invite", "2026-02-01", "outdoor"),
+        ("Long Jump", "Invite", "2026-03-15", "indoor"),
+        ("Long Jump", "Invite", "2026-03-16", "outdoor"),
+        ("Long Jump", "Invite", "2025-12-06", "indoor"),
+        ("Long Jump", None, None, "outdoor"),
+    ])
+    def test_rules(self, event, meet, date, expected):
+        assert guess_season(event, meet, date) == expected
+
+
+def result(event, season, date, seconds=None, meters=None, meet="Meet"):
+    display = f"{meters:.2f}m" if meters is not None else f"{seconds:.2f}"
+    return {"event": event, "season": season, "new_seconds": seconds, "new_meters": meters,
+            "display": display, "meet_name": meet, "meet_date": date}
+
+
+class TestComputePrs:
+    def test_one_pr_per_event_per_season(self):
+        prs = compute_prs([
+            result("Long Jump", "indoor", "2026-02-01", meters=6.73),
+            result("Long Jump", "outdoor", "2026-05-14", meters=6.91),
+            result("Long Jump", "outdoor", "2026-04-11", meters=6.87),
+        ])
+        assert set(prs) == {("Long Jump", "indoor"), ("Long Jump", "outdoor")}
+        assert prs[("Long Jump", "indoor")]["best_display"] == "6.73m"
+        assert prs[("Long Jump", "outdoor")]["best_display"] == "6.91m"
+
+    def test_improvement_over_the_best_before_that_day(self):
+        prs = compute_prs([
+            result("400 Meters", "outdoor", "2026-04-01", seconds=52.0),
+            result("400 Meters", "outdoor", "2026-04-08", seconds=51.0),
+            result("400 Meters", "outdoor", "2026-04-15", seconds=50.0),
+        ])
+        pr = prs[("400 Meters", "outdoor")]
+        assert pr["best_time_seconds"] == 50.0
+        assert pr["previous_best_seconds"] == 51.0
+        assert pr["improvement_delta_pct"] == pytest.approx(1.9608, abs=1e-4)
+
+    def test_field_improvement_and_no_previous_seconds(self):
+        prs = compute_prs([
+            result("Shot Put", "indoor", "2026-01-10", meters=14.0),
+            result("Shot Put", "indoor", "2026-02-10", meters=14.7),
+        ])
+        pr = prs[("Shot Put", "indoor")]
+        assert pr["improvement_delta_pct"] == pytest.approx(5.0)
+        assert pr["previous_best_seconds"] is None
+
+    def test_a_final_is_not_an_improvement_on_the_same_days_prelim(self):
+        prs = compute_prs([
+            result("55 Meters", "indoor", "2025-02-21", seconds=6.73),
+            result("55 Meters", "indoor", "2025-02-21", seconds=6.60),
+        ])
+        assert prs[("55 Meters", "indoor")]["improvement_delta_pct"] == 0
+
+    def test_ties_go_to_the_first_time_it_was_run(self):
+        prs = compute_prs([
+            result("800 Meters", "outdoor", "2026-05-01", seconds=118.0, meet="Later"),
+            result("800 Meters", "outdoor", "2026-04-01", seconds=118.0, meet="First"),
+        ])
+        assert prs[("800 Meters", "outdoor")]["set_at_meet"] == "First"
+
+    def test_seasons_never_mix(self):
+        prs = compute_prs([
+            result("200 Meters", "indoor", "2026-02-01", seconds=23.0),
+            result("200 Meters", "outdoor", "2026-04-01", seconds=22.5),
+        ])
+        # The outdoor 22.5 is a debut outdoors, not an improvement on indoors.
+        assert prs[("200 Meters", "outdoor")]["improvement_delta_pct"] == 0
 
 
 class TestCleanMark:

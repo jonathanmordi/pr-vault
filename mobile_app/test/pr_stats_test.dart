@@ -38,6 +38,75 @@ Map<String, dynamic> pr(String athlete, String event, double value,
     };
 
 void main() {
+  group('seasons', () {
+    test('a row\'s own season wins over the guess', () {
+      expect(seasonOf({'event': 'Long Jump', 'meet_date': '2026-04-04', 'season': 'indoor'}), 'indoor');
+      expect(seasonOf({'event': 'Long Jump', 'meet_date': '2026-04-04'}), 'outdoor');
+      expect(seasonOf({'event': 'Long Jump', 'set_on': '2026-02-04'}), 'indoor');
+    });
+
+    test('guesses like the database does', () {
+      expect(guessSeason('8k', 'Fall Classic', DateTime(2025, 10, 4)), 'xc');
+      expect(guessSeason('Long Jump', 'AARTFC Indoor Championships', DateTime(2026, 3, 7)), 'indoor');
+      expect(guessSeason('Long Jump', 'Invite', DateTime(2026, 3, 15)), 'indoor');
+      expect(guessSeason('Long Jump', 'Invite', DateTime(2026, 3, 16)), 'outdoor');
+      expect(guessSeason('60 Meters', 'Invite', DateTime(2026, 4, 1)), 'indoor');
+      expect(guessSeason('Hammer', 'Invite', DateTime(2026, 2, 1)), 'outdoor');
+    });
+
+    test('opens on the latest track season, XC only when there is no track', () {
+      expect(latestSeasonOf([
+        {'event': 'Long Jump', 'meet_date': '2026-02-01'},
+        {'event': 'Long Jump', 'meet_date': '2026-05-01'},
+        {'event': '8k', 'meet_date': '2026-10-01'},
+      ]), 'outdoor');
+      expect(latestSeasonOf([{'event': '8k', 'meet_date': '2026-10-01'}]), 'xc');
+      expect(latestSeasonOf(const []), 'outdoor');
+    });
+
+    test('seasons in order', () {
+      expect(seasonsIn([
+        {'event': '8k', 'meet_date': '2026-10-01'},
+        {'event': 'Mile', 'season': 'outdoor'},
+        {'event': 'Mile', 'season': 'indoor'},
+      ]), ['indoor', 'outdoor', 'xc']);
+    });
+
+    test('an outdoor mark is not a PR over an indoor one', () {
+      final prs = detectPrs([
+        {...run('a', '2026-02-10', 23.0, event: '200 Meters'), 'season': 'indoor'},
+        {...run('a', '2026-04-10', 22.8, event: '200 Meters'), 'season': 'outdoor'},
+        {...run('a', '2026-04-24', 22.6, event: '200 Meters'), 'season': 'outdoor'},
+      ]);
+      expect(prs, hasLength(1));
+      expect(prs.single.season, 'outdoor');
+      expect(prs.single.previousValue, 22.8);
+    });
+
+    test('a PR is checked against the school record for its own season', () {
+      final records = [
+        {'event': '400 Meters', 'gender': 'M', 'season': 'indoor', 'record_mark_seconds': 49.5},
+        {'event': '400 Meters', 'gender': 'M', 'season': 'outdoor', 'record_mark_seconds': 47.0},
+      ];
+      // An indoor championship in late March: indoor, so the indoor record.
+      final prs = detectPrs([
+        {...run('a', '2026-03-01', 50.0), 'season': 'indoor'},
+        {...run('a', '2026-03-20', 49.4), 'season': 'indoor'},
+      ], records: records, genderByAthlete: {'a': 'M'});
+      expect(prs.single.schoolRecord, isTrue);
+    });
+
+    test('rivals are from the same season', () {
+      final rivals = rivalsFor('me', 'M', [
+        {...pr('me', '400 Meters', 50.0), 'season': 'indoor'},
+        {...pr('them', '400 Meters', 50.1), 'season': 'outdoor'},
+        {...pr('other', '400 Meters', 51.0), 'season': 'indoor'},
+      ]);
+      expect(rivals.keys, ['400 Meters|indoor']);
+      expect(rivals['400 Meters|indoor']!.athleteId, 'other');
+    });
+  });
+
   group('detectPrs', () {
     test('a debut mark is not a PR; beating it is', () {
       final prs = detectPrs([
@@ -108,7 +177,7 @@ void main() {
         run('a', '2026-01-10', 23.0, event: '200 Meters'),
         run('a', '2026-02-10', 22.5, event: '200 Meters'),
         run('b', '2026-01-10', 52.0),
-        run('b', '2026-04-10', 51.0),
+        run('b', '2026-03-12', 51.0),
       ]);
       expect(prs.map((p) => '${p.athleteId} ${p.event}'), [
         'b 400 Meters',
@@ -341,8 +410,9 @@ void main() {
         ...team,
         pr('me', '200 Meters', 22.4),
       ]);
-      expect(rivals.keys, unorderedEquals(['400 Meters', '200 Meters']));
-      expect(rivals['200 Meters']!.athleteId, 'other');
+      expect(rivals.values.map((r) => r.event), unorderedEquals(['400 Meters', '200 Meters']));
+      expect(rivals.keys, unorderedEquals(['400 Meters|outdoor', '200 Meters|outdoor']));
+      expect(rivals.values.firstWhere((r) => r.event == '200 Meters').athleteId, 'other');
     });
   });
 

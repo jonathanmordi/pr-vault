@@ -23,9 +23,93 @@ DateTime? parseMeetDate(Object? raw) {
   return d == null ? null : DateTime(d.year, d.month, d.day);
 }
 
-/// Matches the scraper: March–August marks count toward outdoor records.
-String trackSeasonOf(DateTime d) =>
-    d.month >= 3 && d.month <= 8 ? 'outdoor' : 'indoor';
+// ─── Seasons ──────────────────────────────────────────────────────────────────
+
+/// Every result and PR belongs to one season: 'indoor', 'outdoor' or 'xc'
+/// (cross country). Track seasons never mix: an indoor 200 and an outdoor
+/// 200 are separate events with separate PRs.
+const kSeasons = ['indoor', 'outdoor', 'xc'];
+
+String seasonLabel(String season) => switch (season) {
+      'indoor' => 'Indoor',
+      'outdoor' => 'Outdoor',
+      'xc' => 'XC',
+      _ => season,
+    };
+
+/// Cross country races are named by distance: 8k, 6k, 5k.
+bool isXcEvent(String event) =>
+    RegExp(r'^\d+(\.\d+)?k$', caseSensitive: false).hasMatch(event);
+
+const _indoorOnly = {
+  '55 Meters', '60 Meters', '55 Hurdles', '60 Hurdles', '300 Meters',
+  '500 Meters', '600 Meters', '1000 Meters', 'Weight Throw', 'Pentathlon',
+};
+const _outdoorOnly = {
+  '100 Meters', '100 Hurdles', '110 Hurdles', '400 Hurdles', '10,000 Meters',
+  '3000 Steeplechase', 'Hammer', 'Discus', 'Javelin', 'Decathlon',
+  '4 x 100 Relay',
+};
+
+/// The season of a result saved without one. The same rules as the
+/// database's guess_track_season(): event, meet name, then the date (indoor
+/// runs from November to mid-March).
+String guessSeason(String event, String? meetName, DateTime? date) {
+  if (isXcEvent(event)) return 'xc';
+  final meet = meetName?.toLowerCase() ?? '';
+  if (meet.contains('indoor')) return 'indoor';
+  if (meet.contains('outdoor')) return 'outdoor';
+  if (_indoorOnly.contains(event)) return 'indoor';
+  if (_outdoorOnly.contains(event)) return 'outdoor';
+  if (date != null &&
+      (const [11, 12, 1, 2].contains(date.month) ||
+          (date.month == 3 && date.day <= 15))) {
+    return 'indoor';
+  }
+  return 'outdoor';
+}
+
+/// A meet_appearances or track_prs row's season, guessed for rows from
+/// before results had one.
+String seasonOf(Map<String, dynamic> row) {
+  final s = row['season'];
+  if (s is String && s.isNotEmpty) return s;
+  return guessSeason(
+    row['event'] as String? ?? '',
+    (row['meet_name'] ?? row['set_at_meet']) as String?,
+    parseMeetDate(row['meet_date'] ?? row['set_on']),
+  );
+}
+
+/// Identifies an event within a season, e.g. for keying rivals.
+String eventKey(String event, String season) => '$event|$season';
+
+/// The seasons among [rows], in [kSeasons] order.
+List<String> seasonsIn(Iterable<Map<String, dynamic>> rows) {
+  final present = rows.map(seasonOf).toSet();
+  return [for (final s in kSeasons) if (present.contains(s)) s];
+}
+
+/// The track season of the most recent result in [rows]: what to show
+/// first. Cross country only when there's no track result at all.
+String latestSeasonOf(Iterable<Map<String, dynamic>> rows) {
+  DateTime? latest;
+  String? season;
+  var xc = false;
+  for (final r in rows) {
+    final s = seasonOf(r);
+    if (s == 'xc') {
+      xc = true;
+      continue;
+    }
+    final d = parseMeetDate(r['meet_date'] ?? r['set_on']);
+    if (d != null && (latest == null || d.isAfter(latest))) {
+      latest = d;
+      season = s;
+    }
+  }
+  return season ?? (xc ? 'xc' : 'outdoor');
+}
 
 /// 'SR-4' → 'Senior'. TFRRS shows class years as FR-1, SO-2, JR-3, SR-4.
 String? classYearLabel(String? raw) {
@@ -101,6 +185,7 @@ double? _markOf(Map<String, dynamic> row, String event, String timeKey,
 class PrEvent {
   final String athleteId;
   final String event;
+  final String season;
   final DateTime date;
   final String display;
   final String meetName;
@@ -111,6 +196,7 @@ class PrEvent {
   const PrEvent({
     required this.athleteId,
     required this.event,
+    this.season = 'outdoor',
     required this.date,
     required this.display,
     required this.meetName,
@@ -143,7 +229,7 @@ class _DayBest {
 }
 
 /// Walks each athlete's results in date order and returns every meet where
-/// they beat their previous best, newest first.
+/// they beat their previous best in that event and season, newest first.
 ///
 /// Only the best mark of each day counts, so a prelim and a final on the
 /// same day are one PR. A debut mark has nothing to beat and isn't a PR.
@@ -160,7 +246,8 @@ List<PrEvent> detectPrs(
     if (athleteId == null || event == null || date == null) continue;
     final v = _markOf(a, event, 'time_seconds', 'mark_meters');
     if (v == null) continue;
-    final days = byAthleteEvent.putIfAbsent('$athleteId\u0000$event', () => {});
+    final days = byAthleteEvent.putIfAbsent(
+        '$athleteId\u0000$event\u0000${seasonOf(a)}', () => {});
     final cur = days[date];
     if (cur == null || isBetterMark(event, v, cur.value)) {
       days[date] = _DayBest(v, a);
@@ -169,9 +256,7 @@ List<PrEvent> detectPrs(
 
   final prs = <PrEvent>[];
   byAthleteEvent.forEach((key, days) {
-    final sep = key.indexOf('\u0000');
-    final athleteId = key.substring(0, sep);
-    final event = key.substring(sep + 1);
+    final [athleteId, event, season] = key.split('\u0000');
     final dates = days.keys.toList()..sort();
     double? best;
     for (final date in dates) {
@@ -180,13 +265,14 @@ List<PrEvent> detectPrs(
         prs.add(PrEvent(
           athleteId: athleteId,
           event: event,
+          season: season,
           date: date,
           display: day.row['display_value'] as String? ?? '',
           meetName: day.row['meet_name'] as String? ?? '',
           value: day.value,
           previousValue: best,
           schoolRecord: _holdsSchoolRecord(
-            records, event, genderByAthlete[athleteId], date, day.value),
+            records, event, season, genderByAthlete[athleteId], day.value),
         ));
       }
       if (best == null || isBetterMark(event, day.value, best)) {
@@ -207,9 +293,8 @@ List<PrEvent> detectPrs(
 /// school_records only stores the current record, so a PR counts as a
 /// school record when it matches (or beats) the record for its season.
 bool _holdsSchoolRecord(Iterable<Map<String, dynamic>> records, String event,
-    String? gender, DateTime date, double value) {
+    String season, String? gender, double value) {
   if (gender == null) return false;
-  final season = trackSeasonOf(date);
   for (final r in records) {
     if (r['event'] != event || r['gender'] != gender) continue;
     final rs = r['season'] as String?;
@@ -333,6 +418,7 @@ List<AthleteTrend> trendingAthletes(Iterable<PrEvent> prs,
 class Rival {
   final String athleteId;
   final String event;
+  final String season;
   final double myValue;
   final double theirValue;
   final String theirDisplay;
@@ -340,6 +426,7 @@ class Rival {
   const Rival({
     required this.athleteId,
     required this.event,
+    this.season = 'outdoor',
     required this.myValue,
     required this.theirValue,
     required this.theirDisplay,
@@ -350,11 +437,13 @@ class Rival {
   double get gapPct => gap / myValue * 100;
 }
 
-/// Finds the same-gender teammate with the closest PR in [event]. Ties go
-/// to the teammate who's ahead, since that's the one worth chasing.
+/// Finds the same-gender teammate with the closest PR in [event] and
+/// [season]. Ties go to the teammate who's ahead, since that's the one
+/// worth chasing.
 Rival? findRival({
   required String athleteId,
   required String event,
+  String season = 'outdoor',
   required double myValue,
   required String? gender,
   required Iterable<Map<String, dynamic>> teamPrs,
@@ -362,7 +451,10 @@ Rival? findRival({
   Rival? best;
   for (final p in teamPrs) {
     final otherId = p['athlete_id'] as String?;
-    if (otherId == null || otherId == athleteId || p['event'] != event) {
+    if (otherId == null ||
+        otherId == athleteId ||
+        p['event'] != event ||
+        seasonOf(p) != season) {
       continue;
     }
     final otherGender = (p['profiles'] as Map?)?['gender'] as String? ?? 'M';
@@ -372,6 +464,7 @@ Rival? findRival({
     final candidate = Rival(
       athleteId: otherId,
       event: event,
+      season: season,
       myValue: myValue,
       theirValue: v,
       theirDisplay: p['best_display'] as String? ?? '',
@@ -387,7 +480,8 @@ Rival? findRival({
   return best;
 }
 
-/// Rivals for each event [athleteId] has a PR in, keyed by event.
+/// Rivals for each event and season [athleteId] has a PR in, keyed by
+/// [eventKey].
 Map<String, Rival> rivalsFor(String athleteId, String? gender,
     Iterable<Map<String, dynamic>> teamPrs) {
   final rivals = <String, Rival>{};
@@ -397,14 +491,16 @@ Map<String, Rival> rivalsFor(String athleteId, String? gender,
     if (event == null) continue;
     final mine = _markOf(p, event, 'best_time_seconds', 'best_mark_meters');
     if (mine == null) continue;
+    final season = seasonOf(p);
     final rival = findRival(
       athleteId: athleteId,
       event: event,
+      season: season,
       myValue: mine,
       gender: gender,
       teamPrs: teamPrs,
     );
-    if (rival != null) rivals[event] = rival;
+    if (rival != null) rivals[eventKey(event, season)] = rival;
   }
   return rivals;
 }
