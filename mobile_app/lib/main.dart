@@ -1,3 +1,5 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -5,6 +7,7 @@ import 'app_config.dart';
 import 'athlete_profile_screen.dart';
 import 'design_system.dart';
 import 'leaderboard_screen.dart';
+import 'login_screen.dart';
 import 'profile_screen.dart';
 import 'settings_screen.dart';
 import 'maxes_screen.dart';
@@ -231,201 +234,6 @@ class _TabPage extends StatelessWidget {
   }
 }
 
-/// Email/password sign-in, and sign-up with a school email that's verified
-/// with an emailed code.
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
-
-  @override
-  State<LoginScreen> createState() => _LoginScreenState();
-}
-
-class _LoginScreenState extends State<LoginScreen> {
-  final _emailCtrl = TextEditingController();
-  final _passCtrl = TextEditingController();
-  final _nameCtrl = TextEditingController();
-  bool _loading = false;
-  bool _isSignUp = false;
-
-  void _openVerify(String email) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => VerifyEmailScreen(email: email)),
-    );
-  }
-
-  Future<void> _submit() async {
-    // Single handler toggles between login and registration states.
-    final email = _emailCtrl.text.trim();
-    setState(() => _loading = true);
-    try {
-      if (_isSignUp) {
-        final res = await supabase.auth.signUp(
-          email: email,
-          password: _passCtrl.text.trim(),
-          data: {'full_name': _nameCtrl.text.trim()},
-        );
-        // With email confirmation on there's no session until the emailed
-        // code is entered. Without it, AuthGate takes over straight away.
-        if (res.session == null && mounted) _openVerify(email);
-      } else {
-        try {
-          await supabase.auth.signInWithPassword(
-            email: email,
-            password: _passCtrl.text.trim(),
-          );
-        } on AuthException catch (e) {
-          // Signed up but never entered the code: send a fresh one.
-          if (e.code != 'email_not_confirmed') rethrow;
-          await const OnboardingApi().resendSignup(email);
-          if (mounted) _openVerify(email);
-        }
-      }
-    } on AuthException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(e.message)));
-      }
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  @override
-  void dispose() {
-    _emailCtrl.dispose();
-    _passCtrl.dispose();
-    _nameCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-
-    return Scaffold(
-      backgroundColor: C.bg(dark),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 28),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Spacer(),
-              Center(
-                child: Container(
-                  width: 72,
-                  height: 72,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [C.accentOf(dark), C.accentAlt],
-                    ),
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x4DB80C09),
-                        blurRadius: 24,
-                        offset: Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: const Center(
-                    child: Text(
-                      'V',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 36,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Text(
-                'PR Vault',
-                style: TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.96,
-                  color: C.text1(dark),
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 6),
-              Text(
-                _isSignUp ? 'Create your account' : 'Track. Lift. Compete.',
-                style: TextStyle(fontSize: 15, color: C.text3(dark)),
-                textAlign: TextAlign.center,
-              ),
-              const Spacer(),
-              if (_isSignUp) ...[
-                InputField(
-                  controller: _nameCtrl,
-                  hint: 'Full name',
-                  icon: Icons.person_outline,
-                  dark: dark,
-                ),
-                const SizedBox(height: 12),
-              ],
-              InputField(
-                controller: _emailCtrl,
-                hint: _isSignUp ? 'School email' : 'Email',
-                icon: Icons.mail_outline,
-                dark: dark,
-                keyboardType: TextInputType.emailAddress,
-                autofillHints: const [AutofillHints.email],
-              ),
-              const SizedBox(height: 12),
-              InputField(
-                controller: _passCtrl,
-                hint: 'Password',
-                icon: Icons.lock_outline,
-                dark: dark,
-                obscure: true,
-              ),
-              const SizedBox(height: 20),
-              if (_isSignUp) ...[
-                Text(
-                  "Use your school email and you'll join your team "
-                  'automatically. We\'ll send a code to check it.',
-                  style: TextStyle(fontSize: 12, height: 1.4, color: C.text3(dark)),
-                ),
-                const SizedBox(height: 16),
-              ],
-              PrimaryButton(
-                label: _isSignUp ? 'Create Account' : 'Sign In',
-                loading: _loading,
-                onTap: _submit,
-                dark: dark,
-              ),
-              const SizedBox(height: 16),
-              GestureDetector(
-                onTap: () => setState(() => _isSignUp = !_isSignUp),
-                child: Text(
-                  _isSignUp
-                      ? 'Already have an account? Sign in'
-                      : "Don't have an account? Sign up",
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: C.accentOf(dark),
-                    fontWeight: FontWeight.w500,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-              const SizedBox(height: 32),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// Pill-shaped tab bar. Tap a tab, or press and slide along the bar: the
 /// highlight follows your finger and the tab under it opens when you let go.
 class _FloatingNav extends StatefulWidget {
@@ -516,61 +324,82 @@ class _FloatingNavState extends State<_FloatingNav> {
             scale: sliding ? 1.03 : 1,
             duration: const Duration(milliseconds: 220),
             curve: kSpring,
-            child: Container(
-              height: 64,
+            // Frosted glass: whatever scrolls underneath shows through,
+            // blurred.
+            child: DecoratedBox(
               decoration: BoxDecoration(
-                color: dark ? const Color(0xFF1C1C1E) : Colors.white,
                 borderRadius: BorderRadius.circular(32),
-                border: Border.all(color: C.border(dark), width: 0.5),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: dark ? 0.4 : 0.12),
+                    color: Colors.black.withValues(alpha: dark ? 0.35 : 0.08),
                     blurRadius: 24,
                     offset: const Offset(0, 8),
                   ),
                 ],
               ),
-              child: Stack(
-                children: [
-                  AnimatedPositioned(
-                    duration: sliding
-                        ? Duration.zero
-                        : const Duration(milliseconds: 380),
-                    curve: Curves.easeOutBack,
-                    left: left,
-                    top: _inset,
-                    bottom: _inset,
-                    width: slot,
-                    child: AnimatedScale(
-                      scale: sliding ? 1.08 : 1,
-                      duration: const Duration(milliseconds: 220),
-                      curve: kSpring,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: C.accentSoft(dark),
-                          borderRadius: BorderRadius.circular(100),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(32),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                  child: Container(
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: (dark ? const Color(0xFF1C1C1E) : Colors.white)
+                          .withValues(alpha: dark ? 0.72 : 0.75),
+                      borderRadius: BorderRadius.circular(32),
+                      border: Border.all(
+                        color: Colors.white.withValues(
+                          alpha: dark ? 0.10 : 0.65,
                         ),
+                        width: 0.5,
                       ),
                     ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: _inset),
-                    child: Row(
+                    child: Stack(
                       children: [
-                        for (var i = 0; i < _items.length; i++)
-                          Expanded(
-                            child: _NavItem(
-                              icon: _items[i].$1,
-                              activeIcon: _items[i].$2,
-                              label: _items[i].$3,
-                              active: shown == i,
-                              dark: dark,
+                        AnimatedPositioned(
+                          duration: sliding
+                              ? Duration.zero
+                              : const Duration(milliseconds: 380),
+                          curve: Curves.easeOutBack,
+                          left: left,
+                          top: _inset,
+                          bottom: _inset,
+                          width: slot,
+                          child: AnimatedScale(
+                            scale: sliding ? 1.08 : 1,
+                            duration: const Duration(milliseconds: 220),
+                            curve: kSpring,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: C.accentSoft(dark),
+                                borderRadius: BorderRadius.circular(100),
+                              ),
                             ),
                           ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: _inset,
+                          ),
+                          child: Row(
+                            children: [
+                              for (var i = 0; i < _items.length; i++)
+                                Expanded(
+                                  child: _NavItem(
+                                    icon: _items[i].$1,
+                                    activeIcon: _items[i].$2,
+                                    label: _items[i].$3,
+                                    active: shown == i,
+                                    dark: dark,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
                       ],
                     ),
                   ),
-                ],
+                ),
               ),
             ),
           ),

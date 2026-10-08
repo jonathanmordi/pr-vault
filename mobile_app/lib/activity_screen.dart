@@ -157,12 +157,14 @@ class _ActivityScreenState extends State<ActivityScreen> {
       child: Scaffold(
         backgroundColor: C.bg(dark),
         body: SafeArea(
+          top: false,
           bottom: false,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 20, 0),
+              WashHeader(
+                dark: dark,
+                padding: EdgeInsets.fromLTRB(16, MediaQuery.paddingOf(context).top + 12, 20, 0),
                 child: Row(
                   children: [
                     PressScale(
@@ -184,55 +186,23 @@ class _ActivityScreenState extends State<ActivityScreen> {
                     const SizedBox(width: 12),
                     Text(
                       'Activity',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.5,
-                        color: C.text1(dark),
-                      ),
+                      style: pageTitleStyle(dark),
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 16),
-              SizedBox(
-                height: 36,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  children: ['All', 'Rivals', 'You'].map((f) {
-                    final sel = f == _filter;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: PressScale(
-                        pressedScale: 0.96,
-                        onTap: () {
-                          if (sel) return;
-                          HapticFeedback.selectionClick();
-                          setState(() => _filter = f);
-                        },
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          curve: kSpring,
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: sel ? C.accentOf(dark) : C.surface2(dark),
-                            borderRadius: BorderRadius.circular(100),
-                          ),
-                          child: Text(
-                            f,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: sel ? Colors.white : C.text2(dark),
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
+              ChipRow(
+                height: 40,
+                chips: [
+                  for (final f in const ['All', 'Rivals', 'You'])
+                    AppChip(
+                      label: f,
+                      selected: f == _filter,
+                      dark: dark,
+                      onTap: () => setState(() => _filter = f),
+                    ),
+                ],
               ),
               const SizedBox(height: 12),
               Container(height: 0.5, color: C.border(dark)),
@@ -315,15 +285,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
         if (row is String) {
           return Padding(
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 6),
-            child: Text(
-              row,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: C.text3(dark),
-                letterSpacing: 0.06 * 13,
-              ),
-            ),
+            child: Text(row, style: SectionTitle.style(dark).copyWith(fontSize: 17)),
           );
         }
         final p = row as PrEvent;
@@ -350,36 +312,26 @@ class _ActivityScreenState extends State<ActivityScreen> {
     return ListView(
       physics: physics,
       children: [
-        const SizedBox(height: 120),
-        Icon(icon, size: 40, color: C.text3(dark)),
-        const SizedBox(height: 12),
-        Text(
-          text,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w500,
-            color: C.text3(dark),
-          ),
-        ),
+        const SizedBox(height: 110),
+        EmptyState(icon: icon, title: text, dark: dark),
       ],
     );
   }
 
   String _monthLabel(DateTime d) {
     const months = [
-      'JANUARY',
-      'FEBRUARY',
-      'MARCH',
-      'APRIL',
-      'MAY',
-      'JUNE',
-      'JULY',
-      'AUGUST',
-      'SEPTEMBER',
-      'OCTOBER',
-      'NOVEMBER',
-      'DECEMBER',
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
     ];
     return '${months[d.month - 1]} ${d.year}';
   }
