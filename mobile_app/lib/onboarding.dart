@@ -299,45 +299,24 @@ class _GateMessage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    return Scaffold(
-      backgroundColor: C.bg(dark),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 28),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Spacer(),
-              Icon(icon, size: 48, color: C.accentOf(dark)),
-              const SizedBox(height: 20),
-              Text(
-                title,
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, letterSpacing: -0.5, color: C.text1(dark)),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                body,
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 15, height: 1.4, color: C.text3(dark)),
-              ),
-              const Spacer(),
-              PrimaryButton(label: action, onTap: onAction, dark: dark),
-              const SizedBox(height: 12),
-              if (secondary != null)
-                TextButton(
-                  onPressed: onSecondary,
-                  child: Text(secondary!,
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: C.accentOf(dark))),
-                ),
-              TextButton(
-                onPressed: onSignOut,
-                child: Text('Sign out', style: TextStyle(fontSize: 14, color: C.text2(dark))),
-              ),
-              const SizedBox(height: 20),
-            ],
-          ),
-        ),
+    return StepScaffold(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Spacer(),
+          HeroIcon(icon: icon, dark: dark),
+          const SizedBox(height: 28),
+          StepHeading(title: title, body: body, dark: dark),
+          const Spacer(),
+          PrimaryButton(label: action, onTap: onAction, dark: dark),
+          if (secondary != null) ...[
+            const SizedBox(height: 10),
+            PrimaryButton(label: secondary!, onTap: onSecondary ?? () {}, dark: dark, tone: ButtonTone.soft),
+          ],
+          const SizedBox(height: 4),
+          LinkButton(label: 'Sign out', onTap: onSignOut, dark: dark),
+          const SizedBox(height: 12),
+        ],
       ),
     );
   }
@@ -431,103 +410,44 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    return Scaffold(
-      backgroundColor: C.bg(dark),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 28),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: PressScale(
-                  onTap: () => Navigator.of(context).pop(),
-                  child: Container(
-                    margin: const EdgeInsets.only(top: 8),
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(shape: BoxShape.circle, color: C.surface2(dark)),
-                    child: Icon(Icons.arrow_back, size: 16, color: C.text2(dark)),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 48),
-              Icon(Icons.mark_email_read_outlined, size: 48, color: C.accentOf(dark)),
-              const SizedBox(height: 20),
-              Text(
-                'Check your email',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, letterSpacing: -0.5, color: C.text1(dark)),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'We sent a $kCodeLength-digit code to\n${widget.email}',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 15, height: 1.4, color: C.text3(dark)),
-              ),
-              const SizedBox(height: 32),
-              Container(
-                height: 64,
-                decoration: BoxDecoration(
-                  color: C.surface(dark),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: _error != null ? C.accentOf(dark) : C.border(dark)),
-                ),
-                alignment: Alignment.center,
-                child: _verifying
-                    ? CircularProgressIndicator(color: C.accentOf(dark), strokeWidth: 2)
-                    : TextField(
-                        controller: _codeCtrl,
-                        autofocus: true,
-                        keyboardType: TextInputType.number,
-                        autofillHints: const [AutofillHints.oneTimeCode],
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                          LengthLimitingTextInputFormatter(kCodeLength),
-                        ],
-                        onChanged: _onChanged,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 30,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 12,
-                          color: C.text1(dark),
-                        ),
-                        decoration: InputDecoration(
-                          hintText: '•' * kCodeLength,
-                          hintStyle: TextStyle(color: C.text3(dark), letterSpacing: 12),
-                          border: InputBorder.none,
-                          isDense: true,
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                      ),
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 10),
-                Text(
-                  _error!,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 13, color: C.accentOf(dark)),
-                ),
-              ],
-              const SizedBox(height: 20),
-              Center(
-                child: TextButton(
-                  onPressed: _cooldown > 0 ? null : _resend,
-                  child: Text(
-                    _cooldown > 0 ? 'Send a new code in ${_cooldown}s' : 'Send a new code',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: _cooldown > 0 ? C.text3(dark) : C.accentOf(dark),
-                    ),
-                  ),
-                ),
-              ),
-            ],
+    return StepScaffold(
+      onBack: () => Navigator.of(context).pop(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 36),
+          HeroIcon(icon: Icons.mark_email_read_outlined, dark: dark),
+          const SizedBox(height: 28),
+          StepHeading(
+            title: 'Check your email',
+            body: 'We sent a $kCodeLength-digit code to\n${widget.email}',
+            dark: dark,
           ),
-        ),
+          const SizedBox(height: 32),
+          CodeCells(
+            controller: _codeCtrl,
+            length: kCodeLength,
+            onChanged: _onChanged,
+            error: _error != null,
+            busy: _verifying,
+            dark: dark,
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              _error!,
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, height: 1.4, color: C.accentOf(dark)),
+            ),
+          ],
+          const SizedBox(height: 16),
+          LinkButton(
+            label: _cooldown > 0 ? 'Send a new code in ${_cooldown}s' : 'Send a new code',
+            onTap: _cooldown > 0 ? null : _resend,
+            dark: dark,
+            accent: true,
+          ),
+        ],
       ),
     );
   }
@@ -610,43 +530,54 @@ class _ClaimProfileScreenState extends State<ClaimProfileScreen> {
     }
   }
 
+  /// One card of names, separated by hairlines.
+  Widget _group(List<RosterEntry> entries, bool dark) {
+    return GlassCard(
+      forceDark: dark,
+      padding: EdgeInsets.zero,
+      child: Column(
+        children: [
+          for (var i = 0; i < entries.length; i++) ...[
+            if (i > 0) Divider(height: 0.5, thickness: 0.5, indent: 68, color: C.border(dark)),
+            _row(entries[i], dark),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _row(RosterEntry entry, bool dark) {
     final detail = entry.onRoster ? classYearLabel(entry.classYear) : 'Alum';
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: PressScale(
-        pressedScale: 0.98,
-        onTap: _claiming == null ? () => _pick(entry) : () {},
-        child: GlassCard(
-          forceDark: dark,
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-          child: Row(
-            children: [
-              InitialsAvatar(name: entry.name, gender: entry.gender, dark: dark),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      formatName(entry.name),
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: C.text1(dark)),
-                    ),
-                    if (detail != null)
-                      Text(detail, style: TextStyle(fontSize: 12, color: C.text3(dark))),
-                  ],
-                ),
+    return PressScale(
+      pressedScale: 0.98,
+      onTap: _claiming == null ? () => _pick(entry) : () {},
+      child: Container(
+        color: Colors.transparent,
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: Row(
+          children: [
+            InitialsAvatar(name: entry.name, gender: entry.gender, dark: dark),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    formatName(entry.name),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: C.text1(dark)),
+                  ),
+                  if (detail != null)
+                    Text(detail, style: TextStyle(fontSize: 13, color: C.text3(dark))),
+                ],
               ),
-              if (_claiming == entry.id)
-                SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(color: C.accentOf(dark), strokeWidth: 2),
-                )
-              else
-                Icon(Icons.chevron_right, size: 18, color: C.text3(dark)),
-            ],
-          ),
+            ),
+            if (_claiming == entry.id)
+              SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(color: C.accentOf(dark), strokeWidth: 2),
+              ),
+          ],
         ),
       ),
     );
@@ -659,30 +590,36 @@ class _ClaimProfileScreenState extends State<ClaimProfileScreen> {
 
     return Scaffold(
       backgroundColor: C.bg(dark),
-      body: SafeArea(
-        bottom: false,
-        child: CustomScrollView(
+      body: CustomScrollView(
           slivers: [
+            SliverToBoxAdapter(
+              child: WashHeader(
+                dark: dark,
+                padding: EdgeInsets.fromLTRB(20, MediaQuery.paddingOf(context).top + 32, 20, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Which one is you?', style: pageTitleStyle(dark)),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Pick your name from your team on TFRRS to bring in your PRs and meets.',
+                      style: TextStyle(fontSize: 15, height: 1.4, color: C.text2(dark)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 32, 20, 0),
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
               sliver: SliverList.list(
                 children: [
-                  Text(
-                    'Which one is you?',
-                    style: TextStyle(fontSize: 32, fontWeight: FontWeight.w700, letterSpacing: -0.96, color: C.text1(dark)),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Pick your name from your team on TFRRS to bring in your PRs and meets.',
-                    style: TextStyle(fontSize: 15, height: 1.4, color: C.text3(dark)),
-                  ),
-                  const SizedBox(height: 20),
                   InputField(
                     controller: _searchCtrl,
                     hint: 'Search your name',
                     icon: Icons.search,
                     dark: dark,
                     onChanged: (_) => setState(() {}),
+                    onClear: () => setState(() {}),
                   ),
                   const SizedBox(height: 16),
                 ],
@@ -690,11 +627,14 @@ class _ClaimProfileScreenState extends State<ClaimProfileScreen> {
             ),
             if (_failed)
               SliverToBoxAdapter(
-                child: Center(
-                  child: TextButton(
-                    onPressed: _load,
-                    child: Text("Couldn't load your team. Tap to retry.",
-                        style: TextStyle(color: C.accentOf(dark))),
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 24),
+                  child: EmptyState(
+                    icon: Icons.cloud_off_outlined,
+                    title: "Couldn't load your team",
+                    actionLabel: 'Try again',
+                    onAction: _load,
+                    dark: dark,
                   ),
                 ),
               )
@@ -712,42 +652,31 @@ class _ClaimProfileScreenState extends State<ClaimProfileScreen> {
                 // can still find themselves under Alumni.
                 sliver: SliverList.list(
                   children: [
-                    for (final entry in matches.where((e) => e.onRoster)) _row(entry, dark),
+                    if (matches.any((e) => e.onRoster)) _group(matches.where((e) => e.onRoster).toList(), dark),
                     if (matches.any((e) => !e.onRoster)) ...[
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(4, 16, 4, 10),
-                        child: Text(
-                          'ALUMNI',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.06 * 13,
-                            color: C.text3(dark),
-                          ),
-                        ),
+                        padding: const EdgeInsets.fromLTRB(4, 24, 4, 10),
+                        child: Text('Alumni', style: SectionTitle.style(dark)),
                       ),
-                      for (final entry in matches.where((e) => !e.onRoster)) _row(entry, dark),
+                      _group(matches.where((e) => !e.onRoster).toList(), dark),
                     ],
                   ],
                 ),
               ),
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 48),
-                child: TextButton(
-                  onPressed: _claiming == null ? widget.onDone : null,
-                  child: Text(
-                    _roster != null && matches.isEmpty
-                        ? "Can't find yourself? Skip for now"
-                        : "I'm not on TFRRS yet",
-                    style: TextStyle(fontSize: 14, color: C.text2(dark)),
-                  ),
+                padding: EdgeInsets.fromLTRB(20, 12, 20, MediaQuery.paddingOf(context).bottom + 32),
+                child: LinkButton(
+                  label: _roster != null && matches.isEmpty
+                      ? "Can't find yourself? Skip for now"
+                      : "I'm not on TFRRS yet",
+                  onTap: _claiming == null ? widget.onDone : null,
+                  dark: dark,
                 ),
               ),
             ),
           ],
         ),
-      ),
     );
   }
 }
@@ -804,49 +733,21 @@ class _InviteCodeScreenState extends State<InviteCodeScreen> {
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    return Scaffold(
-      backgroundColor: C.bg(dark),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 28),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: PressScale(
-                  onTap: () => Navigator.of(context).pop(false),
-                  child: Container(
-                    margin: const EdgeInsets.only(top: 8),
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(shape: BoxShape.circle, color: C.surface2(dark)),
-                    child: Icon(Icons.arrow_back, size: 16, color: C.text2(dark)),
-                  ),
-                ),
-              ),
-              const Spacer(),
-              Icon(Icons.key_outlined, size: 48, color: C.accentOf(dark)),
-              const SizedBox(height: 20),
-              Text(
-                'Enter invite code',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, letterSpacing: -0.5, color: C.text1(dark)),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'If your team gave you a code, enter it here.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 15, color: C.text3(dark)),
-              ),
-              const Spacer(),
-              InputField(controller: _codeCtrl, hint: 'Invite code', icon: Icons.tag, dark: dark),
-              const SizedBox(height: 20),
-              PrimaryButton(label: 'Join Team', loading: _loading, onTap: _submit, dark: dark),
-              const SizedBox(height: 32),
-            ],
-          ),
-        ),
+    return StepScaffold(
+      onBack: () => Navigator.of(context).pop(false),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Spacer(),
+          HeroIcon(icon: Icons.key_outlined, dark: dark),
+          const SizedBox(height: 28),
+          StepHeading(title: 'Enter invite code', body: 'If your team gave you a code, enter it here.', dark: dark),
+          const Spacer(),
+          InputField(controller: _codeCtrl, hint: 'Invite code', icon: Icons.tag, dark: dark),
+          const SizedBox(height: 14),
+          PrimaryButton(label: 'Join Team', loading: _loading, onTap: _submit, dark: dark),
+          const SizedBox(height: 24),
+        ],
       ),
     );
   }

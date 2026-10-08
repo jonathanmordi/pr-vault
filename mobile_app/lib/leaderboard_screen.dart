@@ -228,9 +228,14 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     );
   }
 
+  static const _tabLabels = {
+    'heat': 'Heat Map',
+    'rankings': 'PR Rankings',
+    'trending': 'Trending',
+  };
+
   void _setTab(String tab) {
     if (tab == _tab) return;
-    HapticFeedback.selectionClick();
     setState(() => _tab = tab);
   }
 
@@ -244,6 +249,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     return Scaffold(
       backgroundColor: C.bg(dark),
       body: SafeArea(
+        top: false,
         bottom: false,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -283,8 +289,9 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   }
 
   Widget _buildHeader(bool dark) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+    return WashHeader(
+      dark: dark,
+      padding: EdgeInsets.fromLTRB(20, MediaQuery.paddingOf(context).top + 16, 20, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -293,15 +300,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'PR Vault',
-                  style: TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.96,
-                    color: C.text1(dark),
-                  ),
-                ),
+                Text('PR Vault', style: pageTitleStyle(dark)),
                 Row(
                   children: [
                     _BellButton(dark: dark, onTap: _openActivity),
@@ -390,7 +389,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                SegmentToggle(
+                DropToggle(
+                  key: const ValueKey('gender'),
                   options: const ['All', 'M', 'F'],
                   value: _gender,
                   dark: dark,
@@ -401,159 +401,69 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Tabs (shrink rather than overflow at large text sizes)
+          // Main tabs: the same sliding pill as the other switches.
           FadeSlideIn(
             delay: const Duration(milliseconds: 120),
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: Row(
-                children: [
-                  _TabBtn(
-                    label: 'Heat Map',
-                    active: _tab == 'heat',
-                    onTap: () => _setTab('heat'),
-                  ),
-                  const SizedBox(width: 24),
-                  _TabBtn(
-                    label: 'PR Rankings',
-                    active: _tab == 'rankings',
-                    onTap: () => _setTab('rankings'),
-                  ),
-                  const SizedBox(width: 24),
-                  _TabBtn(
-                    label: 'Trending',
-                    active: _tab == 'trending',
-                    onTap: () => _setTab('trending'),
-                  ),
-                ],
+            child: SizedBox(
+              width: double.infinity,
+              child: SegmentToggle(
+                options: _tabLabels.values.toList(),
+                value: _tabLabels[_tab]!,
+                dark: dark,
+                height: 40,
+                fontSize: 14,
+                onChanged: (label) => _setTab(
+                    _tabLabels.entries.firstWhere((e) => e.value == label).key),
               ),
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 8),
         ],
       ),
     );
   }
 
   Widget _buildChips(bool dark) {
-    return SizedBox(
-      height: 52,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        children: _eventGroups.keys.map((g) {
-          final sel = g == _group;
-          return Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: PressScale(
-              pressedScale: 0.96,
-              onTap: () {
-                if (sel) return;
-                HapticFeedback.selectionClick();
-                setState(() {
-                  _group = g;
-                  _subEvent = null;
-                });
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 250),
-                curve: kSpring,
-                height: 36,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: sel ? C.accentOf(dark) : C.surface2(dark),
-                  borderRadius: BorderRadius.circular(100),
-                  boxShadow: sel
-                      ? const [
-                          BoxShadow(
-                            color: Color(0x4DE8372D),
-                            blurRadius: 12,
-                            offset: Offset(0, 2),
-                          )
-                        ]
-                      : null,
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  g,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight:
-                        sel ? FontWeight.w600 : FontWeight.w500,
-                    letterSpacing: -0.1,
-                    color: sel ? Colors.white : C.text2(dark),
-                  ),
-                ),
-              ),
-            ),
-          );
-        }).toList(),
-      ),
+    return ChipRow(
+      chips: [
+        for (final g in _eventGroups.keys)
+          AppChip(
+            label: g,
+            selected: g == _group,
+            dark: dark,
+            onTap: () => setState(() {
+              _group = g;
+              _subEvent = null;
+            }),
+          ),
+      ],
     );
   }
 
   Widget _buildSubChips(bool dark) {
     final events = _eventGroups[_group] ?? [];
-    return SizedBox(
+    return ChipRow(
       height: 44,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: GestureDetector(
-              onTap: () {
-                if (_subEvent == null) return;
-                HapticFeedback.selectionClick();
-                setState(() => _subEvent = null);
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                alignment: Alignment.center,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-                decoration: BoxDecoration(
-                  color: _subEvent == null
-                      ? C.text2(dark)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(100),
-                  border: Border.all(
-                      color: _subEvent == null
-                          ? Colors.transparent
-                          : C.border(dark)),
-                ),
-                child: Text(
-                  'All $_group',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: _subEvent == null
-                        ? (dark ? C.bg(dark) : Colors.white)
-                        : C.text3(dark),
-                  ),
-                ),
-              ),
-            ),
+      chips: [
+        AppChip(
+          label: 'All $_group',
+          selected: _subEvent == null,
+          dark: dark,
+          small: true,
+          onTap: () => setState(() => _subEvent = null),
+        ),
+        for (final ev in events)
+          AppChip(
+            label: ev.replaceAll(' Meters', '').replaceAll(' Hurdles', 'H'),
+            selected: _subEvent == ev,
+            dark: dark,
+            small: true,
+            onTap: () => setState(() => _subEvent = ev),
           ),
-          ...events.map((ev) {
-            final sel = _subEvent == ev;
-            return Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: _OutlineChip(
-                label: ev.replaceAll(' Meters', '').replaceAll(' Hurdles', 'H'),
-                selected: sel,
-                dark: dark,
-                onTap: () => setState(() => _subEvent = ev),
-              ),
-            );
-          }),
-        ],
-      ),
+      ],
     );
   }
 
-  /// Current roster vs. all-time (with alumni), on PR Rankings.
   Widget _buildRosterControls(bool dark) {
     return SizedBox(
       height: 44,
@@ -604,11 +514,14 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 children: snap.windows.map((w) {
                   return Padding(
                     padding: const EdgeInsets.only(right: 8),
-                    child: _OutlineChip(
-                      label: w.label,
-                      selected: w == current,
-                      dark: dark,
-                      onTap: () => setState(() => _window = w),
+                    child: Center(
+                      child: AppChip(
+                        label: w.label,
+                        selected: w == current,
+                        dark: dark,
+                        small: true,
+                        onTap: () => setState(() => _window = w),
+                      ),
                     ),
                   );
                 }).toList(),
@@ -665,23 +578,12 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   }
 
   Widget _message(bool dark, IconData icon, String text) {
+    // A list so pull-to-refresh still works on an empty or failed page.
     return ListView(
       physics: _listPhysics,
       children: [
-        const SizedBox(height: 100),
-        Icon(icon, size: 40, color: C.text3(dark)),
-        const SizedBox(height: 12),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 40),
-          child: Text(
-            text,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w500,
-                color: C.text3(dark)),
-          ),
-        ),
+        const SizedBox(height: 90),
+        EmptyState(icon: icon, title: text, dark: dark),
       ],
     );
   }
@@ -689,20 +591,24 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   Widget _buildList(bool dark, List<Map<String, dynamic>> list) {
     if (list.isEmpty) return _message(dark, Icons.search, 'No results found');
 
-    final podium = _tab == 'heat' && _group == 'All' && _subEvent == null
+    final podium = _tab == 'heat' && _group == 'All' && _subEvent == null && _search.isEmpty
         ? list
             .where((e) => (e['improvement_delta_pct'] as num? ?? 0) > 0.01)
-            .take(3)
+            .take(5)
             .toList()
         : const <Map<String, dynamic>>[];
     final showPodium = podium.isNotEmpty;
 
+    // The featured cards are the top of the ranking, so the list carries on
+    // from there instead of repeating them.
+    final skip = showPodium ? podium.length : 0;
+    final showRestTitle = showPodium && list.length > skip;
+    final header = (showPodium ? 1 : 0) + (showRestTitle ? 1 : 0);
     return ListView.builder(
       physics: _listPhysics,
       padding: const EdgeInsets.only(bottom: 120),
-      itemCount: list.length + (showPodium ? 1 : 0),
+      itemCount: list.length - skip + header,
       itemBuilder: (_, i) {
-        // Insert podium at top
         if (showPodium && i == 0) {
           return _PodiumCard(
             entries: podium,
@@ -710,7 +616,13 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             onTap: _openDetail,
           );
         }
-        final actualIndex = showPodium ? i - 1 : i;
+        if (showRestTitle && i == 1) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+            child: SectionTitle('Everyone else', dark: dark),
+          );
+        }
+        final actualIndex = i - header + skip;
         final entry = list[actualIndex];
         final id = entry['athlete_id'] as String? ?? actualIndex.toString();
         final event = entry['event'] ?? '';
@@ -941,7 +853,7 @@ class _TrendingRow extends StatelessWidget {
                   Text(
                     formatName(name),
                     style: TextStyle(
-                      fontSize: 14,
+                      fontSize: 15.5,
                       fontWeight: FontWeight.w600,
                       letterSpacing: -0.15,
                       color: C.text1(dark),
@@ -953,7 +865,7 @@ class _TrendingRow extends StatelessWidget {
                   Text(
                     '$eventText · last ${formatShortMeetDate(trend.lastPr)}',
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: 12.5,
                       fontWeight: FontWeight.w500,
                       color: C.text3(dark),
                     ),
@@ -970,7 +882,7 @@ class _TrendingRow extends StatelessWidget {
                 Text(
                   byPoints ? '${trend.points} pts' : prs,
                   style: TextStyle(
-                    fontSize: 15,
+                    fontSize: 16,
                     fontWeight: FontWeight.w700,
                     color: C.accentOf(dark),
                     letterSpacing: -0.4,
@@ -978,12 +890,10 @@ class _TrendingRow extends StatelessWidget {
                 ),
                 Text(
                   byPoints ? prs : '${trend.points} pts',
-                  style: TextStyle(fontSize: 10, color: C.text3(dark)),
+                  style: TextStyle(fontSize: 11.5, color: C.text3(dark)),
                 ),
               ],
             ),
-            const SizedBox(width: 4),
-            Icon(Icons.chevron_right, size: 14, color: C.text3(dark)),
           ],
         ),
       ),
@@ -993,6 +903,7 @@ class _TrendingRow extends StatelessWidget {
 
 // ─── Rank badge ───────────────────────────────────────────────────────────────
 
+/// The row's place as a bold number; the top three in the team color.
 class _RankBadge extends StatelessWidget {
   final int index;
   final bool dark;
@@ -1001,84 +912,17 @@ class _RankBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isFirst = index == 0;
-    final isTop3 = index < 3;
-    return Container(
+    return SizedBox(
       width: 30,
-      height: 30,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: isFirst
-            ? C.accentOf(dark)
-            : isTop3
-                ? C.accentSoft(dark)
-                : C.surface2(dark),
-        boxShadow: isFirst
-            ? const [
-                BoxShadow(
-                  color: Color(0x4DE8372D),
-                  blurRadius: 12,
-                  offset: Offset(0, 2),
-                )
-              ]
-            : null,
-      ),
-      alignment: Alignment.center,
       child: Text(
         '${index + 1}',
+        textAlign: TextAlign.center,
         style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          color: isFirst
-              ? Colors.white
-              : isTop3
-                  ? C.accentOf(dark)
-                  : C.text2(dark),
-        ),
-      ),
-    );
-  }
-}
-
-// ─── Outline chip ─────────────────────────────────────────────────────────────
-
-class _OutlineChip extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final bool dark;
-  final VoidCallback onTap;
-
-  const _OutlineChip({
-    required this.label,
-    required this.selected,
-    required this.dark,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        if (selected) return;
-        HapticFeedback.selectionClick();
-        onTap();
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        alignment: Alignment.center,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-        decoration: BoxDecoration(
-          color: selected ? C.accentOf(dark) : Colors.transparent,
-          borderRadius: BorderRadius.circular(100),
-          border: Border.all(color: selected ? C.accentOf(dark) : C.border(dark)),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: selected ? Colors.white : C.text2(dark),
-          ),
+          fontSize: 17,
+          fontWeight: FontWeight.w800,
+          letterSpacing: -0.5,
+          fontFeatures: const [FontFeature.tabularFigures()],
+          color: index < 3 ? C.accentOf(dark) : C.text3(dark),
         ),
       ),
     );
@@ -1087,6 +931,8 @@ class _OutlineChip extends StatelessWidget {
 
 // ─── Podium card ──────────────────────────────────────────────────────────────
 
+/// Top improvers as a row of featured cards, edge to edge. #1 gets the team
+/// color.
 class _PodiumCard extends StatelessWidget {
   final List<Map<String, dynamic>> entries;
   final bool dark;
@@ -1100,159 +946,96 @@ class _PodiumCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final textGrowth = (MediaQuery.textScalerOf(context).scale(14) / 14 - 1).clamp(0.0, 1.0);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-      child: GlassCard(
-        forceDark: dark,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.local_fire_department,
-                      size: 14, color: C.accentOf(dark)),
-                  const SizedBox(width: 6),
-                  Text(
-                    'TOP IMPROVERS',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.8,
-                      color: C.accentOf(dark),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: entries.asMap().entries.map((e) {
-                  final idx = e.key;
-                  final entry = e.value;
-                  final name =
-                      formatName(entry['profiles']?['full_name'] ?? 'Unknown');
-                  final delta =
-                      (entry['improvement_delta_pct'] ?? 0.0) as num;
-                  final event = entry['event'] ?? '';
-                  final gender =
-                      entry['profiles']?['gender'] ?? 'M';
-
-                  final parts = name.toString().split(' ');
-                  final initials = parts.length >= 2
-                      ? '${parts[0][0]}${parts[1][0]}'.toUpperCase()
-                      : name.toString().isNotEmpty
-                          ? name.toString()[0].toUpperCase()
-                          : '?';
-
-                  final medals = ['🥇', '🥈', '🥉'];
-                  final sizes = [52.0, 44.0, 44.0];
-
-                  return Expanded(
-                    child: GestureDetector(
-                      onTap: () => onTap(entry),
-                      child: Column(
-                        children: [
-                          Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              Container(
-                                width: sizes[idx],
-                                height: sizes[idx],
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  gradient: LinearGradient(
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                    colors: gender == 'F'
-                                        ? const [
-                                            Color(0xFFD4537E),
-                                            Color(0xFFED93B1)
-                                          ]
-                                        : idx == 0
-                                            ? [
-                                                C.accentOf(dark),
-                                                C.accentAlt
-                                              ]
-                                            : [
-                                                C.surface2(dark),
-                                                C.surface3(dark)
-                                              ],
-                                  ),
-                                  boxShadow: idx == 0
-                                      ? const [
-                                          BoxShadow(
-                                            color: Color(0x4DE8372D),
-                                            blurRadius: 16,
-                                            offset: Offset(0, 4),
-                                          )
-                                        ]
-                                      : null,
-                                ),
-                                alignment: Alignment.center,
-                                child: Text(
-                                  initials,
-                                  style: TextStyle(
-                                    fontSize: idx == 0 ? 18 : 14,
-                                    fontWeight: FontWeight.w800,
-                                    color: idx == 0 || gender == 'F'
-                                        ? Colors.white
-                                        : C.text2(dark),
-                                  ),
-                                ),
-                              ),
-                              Positioned(
-                                top: -6,
-                                right: -6,
-                                child: Text(medals[idx],
-                                    style:
-                                        const TextStyle(fontSize: 16)),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            parts.isNotEmpty ? parts[0] : name,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: C.text1(dark),
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.center,
-                          ),
-                          Text(
-                            event,
-                            style: TextStyle(
-                                fontSize: 10, color: C.text3(dark)),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 4),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: C.accentSoft(dark),
-                              borderRadius: BorderRadius.circular(100),
-                            ),
-                            child: Text(
-                              '+${delta.toStringAsFixed(2)}%',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: C.accentOf(dark),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-            ],
+      padding: const EdgeInsets.only(top: 20, bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: SectionTitle('Top Improvers', dark: dark),
           ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 190 + textGrowth * 60,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              itemCount: entries.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 10),
+              itemBuilder: (_, i) => _ImproverCard(
+                entry: entries[i],
+                rank: i + 1,
+                dark: dark,
+                onTap: () => onTap(entries[i]),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ImproverCard extends StatelessWidget {
+  final Map<String, dynamic> entry;
+  final int rank;
+  final bool dark;
+  final VoidCallback onTap;
+
+  const _ImproverCard({required this.entry, required this.rank, required this.dark, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final lead = rank == 1;
+    final name = formatName(entry['profiles']?['full_name'] ?? 'Unknown');
+    final event = entry['event'] as String? ?? '';
+    final delta = (entry['improvement_delta_pct'] ?? 0.0) as num;
+    final gender = entry['profiles']?['gender'] as String? ?? 'M';
+    final ink = lead ? Colors.white : C.text1(dark);
+    final soft = lead ? Colors.white.withValues(alpha: 0.75) : C.text3(dark);
+
+    return PressScale(
+      onTap: onTap,
+      child: Container(
+        width: 150,
+        padding: const EdgeInsets.all(14),
+        decoration: lead
+            ? BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [C.accentOf(dark), C.accentAlt],
+                ),
+                boxShadow: [BoxShadow(color: C.accentOf(dark).withValues(alpha: 0.35), blurRadius: 18, offset: const Offset(0, 6))],
+              )
+            : cardDecoration(dark),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  '$rank',
+                  style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900, letterSpacing: -1, height: 1, color: lead ? Colors.white : C.accentOf(dark)),
+                ),
+                const Spacer(),
+                InitialsAvatar(name: entry['profiles']?['full_name'] ?? '', gender: gender, dark: dark),
+              ],
+            ),
+            const Spacer(),
+            Text(name, maxLines: 2, overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, letterSpacing: -0.2, height: 1.2, color: ink)),
+            const SizedBox(height: 2),
+            Text(event, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: soft)),
+            const SizedBox(height: 10),
+            Text(
+              '+${delta.toStringAsFixed(2)}%',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, letterSpacing: -0.5, color: lead ? Colors.white : C.accentOf(dark)),
+            ),
+          ],
         ),
       ),
     );
@@ -1307,50 +1090,6 @@ class _SparklinePainter extends CustomPainter {
   @override
   bool shouldRepaint(_SparklinePainter old) =>
       old.data != data || old.color != color;
-}
-
-// ─── Tab button ───────────────────────────────────────────────────────────────
-
-class _TabBtn extends StatelessWidget {
-  final String label;
-  final bool active;
-  final VoidCallback onTap;
-
-  const _TabBtn(
-      {required this.label, required this.active, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          AnimatedDefaultTextStyle(
-            duration: const Duration(milliseconds: 200),
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: active ? C.text1(dark) : C.text2(dark),
-            ),
-            child: Text(label),
-          ),
-          const SizedBox(height: 6),
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            curve: kSpring,
-            height: 2,
-            width: active ? 44.0 : 0.0,
-            decoration: BoxDecoration(
-              color: C.accentOf(dark),
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 // ─── Leaderboard row ──────────────────────────────────────────────────────────
@@ -1423,7 +1162,7 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
                         child: Text(
                           name,
                           style: TextStyle(
-                            fontSize: 14,
+                            fontSize: 15.5,
                             fontWeight: FontWeight.w600,
                             letterSpacing: -0.15,
                             color: C.text1(dark),
@@ -1457,7 +1196,7 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
                   Text(
                     event,
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: 12.5,
                       fontWeight: FontWeight.w500,
                       color: C.text3(dark),
                     ),
@@ -1499,7 +1238,7 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
                   Text(
                     Prefs.of(context).mark(event, e['best_display'], e['best_mark_meters']),
                     style: TextStyle(
-                      fontSize: 14,
+                      fontSize: 16,
                       fontWeight: FontWeight.w700,
                       color: C.accentOf(dark),
                       letterSpacing: -0.5,
@@ -1509,12 +1248,10 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
                     Text(
                       '+${delta.toStringAsFixed(1)}%',
                       style: TextStyle(
-                          fontSize: 10, color: C.text3(dark)),
+                          fontSize: 11.5, color: C.text3(dark)),
                     ),
                 ],
               ),
-            const SizedBox(width: 4),
-            Icon(Icons.chevron_right, size: 14, color: C.text3(dark)),
           ],
         ),
       ),

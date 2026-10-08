@@ -1,10 +1,12 @@
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'design_system.dart';
+import 'insights.dart';
 import 'pr_stats.dart';
 import 'prefs.dart';
 import 'team_data.dart';
@@ -363,6 +365,28 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
   bool _loading = true;
   String? _error;
   String? _selectedEvent;
+  final _pageScroll = ScrollController();
+
+  @override
+  void dispose() {
+    _pageScroll.dispose();
+    super.dispose();
+  }
+
+  /// The top bar's color: the wash's top color over the page, fading to the
+  /// plain page color as the hero scrolls away, so there's no seam.
+  static Color _barColor(bool dark, Color page, double offset) => Color.lerp(
+    Color.alphaBlend(
+      C.accentOf(dark).withValues(alpha: washAlpha(dark)),
+      page,
+    ),
+    page,
+    (offset / 120).clamp(0.0, 1.0),
+  )!;
+
+  /// The name in the top bar appears once the hero's name has scrolled away.
+  static double _titleOpacity(double offset) =>
+      ((offset - 90) / 40).clamp(0.0, 1.0);
 
   @override
   void initState() {
@@ -594,162 +618,85 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
       // The header renders straight away from what the caller passed in;
       // only the sections below it wait on the network.
       body: CustomScrollView(
-        controller: sheet?.scrollController,
+        controller: sheet?.scrollController ?? _pageScroll,
         slivers: [
           if (sheet != null)
             _sheetBar(dark, name, sheet)
           else
-            SliverAppBar(
-              backgroundColor: C.bg(dark),
-              elevation: 0,
-              pinned: true,
-              leading: widget.showBackButton
-                  ? GestureDetector(
-                      onTap: () => Navigator.pop(context),
-                      child: Center(
-                        child: Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: C.surface2(dark),
-                          ),
-                          child: Icon(
-                            Icons.arrow_back,
-                            size: 16,
-                            color: C.text2(dark),
-                          ),
-                        ),
+            ListenableBuilder(
+              listenable: _pageScroll,
+              builder: (context, _) {
+                final offset = _pageScroll.hasClients
+                    ? _pageScroll.offset
+                    : 0.0;
+                // Solid at the top so it matches the wash; frosted once the
+                // page scrolls under it.
+                final scrolled = (offset / 120).clamp(0.0, 1.0);
+                return SliverAppBar(
+                  backgroundColor: Colors.transparent,
+                  flexibleSpace: ClipRect(
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(
+                        sigmaX: 20 * scrolled,
+                        sigmaY: 20 * scrolled,
                       ),
-                    )
-                  : const SizedBox(width: 0),
-              automaticallyImplyLeading: false,
-              title: Text(
-                name,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: C.text1(dark),
-                ),
-              ),
-              centerTitle: true,
+                      child: ColoredBox(
+                        color: _barColor(
+                          dark,
+                          C.bg(dark),
+                          offset,
+                        ).withValues(alpha: 1 - 0.2 * scrolled),
+                        // Fill the bar; an empty ColoredBox would size to 0.
+                        child: const SizedBox.expand(),
+                      ),
+                    ),
+                  ),
+                  surfaceTintColor: Colors.transparent,
+                  scrolledUnderElevation: 0,
+                  elevation: 0,
+                  pinned: true,
+                  leading: widget.showBackButton
+                      ? Center(
+                          child: BackCircle(
+                            onTap: () => Navigator.pop(context),
+                            dark: dark,
+                          ),
+                        )
+                      : const SizedBox(width: 0),
+                  automaticallyImplyLeading: false,
+                  title: Opacity(
+                    opacity: _titleOpacity(offset),
+                    child: Text(
+                      name,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: C.text1(dark),
+                      ),
+                    ),
+                  ),
+                  centerTitle: true,
+                );
+              },
             ),
+          SliverToBoxAdapter(child: _hero(dark, name, isFemale)),
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 8),
-
-                  // Header card
-                  FadeSlideIn(
-                    delay: const Duration(milliseconds: 0),
-                    child: GlassCard(
-                      forceDark: dark,
-                      padding: const EdgeInsets.all(24),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 72,
-                            height: 72,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: isFemale
-                                    ? const [
-                                        Color(0xFFD4537E),
-                                        Color(0xFFED93B1),
-                                      ]
-                                    : [C.accentOf(dark), C.accentAlt],
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: isFemale
-                                      ? const Color(0x59D4537E)
-                                      : const Color(0x59E8372D),
-                                  blurRadius: 20,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            alignment: Alignment.center,
-                            child: Text(
-                              _initials(widget.athleteName),
-                              style: const TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.w800,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  name,
-                                  style: TextStyle(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: -0.5,
-                                    color: C.text1(dark),
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Wrap(
-                                  spacing: 8,
-                                  children: [
-                                    if (!_loading)
-                                      _pill(
-                                        '${_prs.length} PRs',
-                                        C.accentSoft(dark),
-                                        C.accentOf(dark),
-                                      ),
-                                    _pill(
-                                      isFemale ? 'Women' : 'Men',
-                                      C.surface2(dark),
-                                      C.text2(dark),
-                                    ),
-                                    if (_standing case final standing?)
-                                      _pill(
-                                        standing,
-                                        C.surface2(dark),
-                                        C.text2(dark),
-                                      ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: sheet != null ? 12 : 16),
-
                   if (sheet != null) ...[
-                    if (focus != null)
-                      _focusRow(dark, focus)
-                    else if (_error == null)
-                      _statsRow(dark),
+                    if (focus != null) _focusRow(dark, focus),
                     _sheetHint(dark, sheet),
                   ],
 
                   if (_loading)
-                    _buildSkeleton(stats: sheet == null || focus != null)
+                    _buildSkeleton()
                   else if (_error != null)
                     _buildError(dark)
                   else ...[
-                    // Stats row (in a sheet without a focus result it's
-                    // already in the peek above)
-                    if (sheet == null || focus != null) ...[
-                      _statsRow(dark),
-                      const SizedBox(height: 28),
-                    ],
+                    _insightsRail(dark),
 
                     // Trend chart
                     if (_prs.isNotEmpty) ...[
@@ -758,15 +705,7 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              'PROGRESSION',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: C.text3(dark),
-                                letterSpacing: 0.06 * 13,
-                              ),
-                            ),
+                            SectionTitle('Progression', dark: dark),
                             const SizedBox(height: 12),
                             SizedBox(
                               height: 36,
@@ -774,41 +713,15 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                                 scrollDirection: Axis.horizontal,
                                 children: _prs.map((pr) {
                                   final event = pr['event'] as String;
-                                  final sel = event == _selectedEvent;
                                   return Padding(
                                     padding: const EdgeInsets.only(right: 8),
-                                    child: GestureDetector(
-                                      onTap: () {
-                                        if (sel) return;
-                                        HapticFeedback.selectionClick();
-                                        setState(() => _selectedEvent = event);
-                                      },
-                                      child: AnimatedContainer(
-                                        duration: const Duration(
-                                          milliseconds: 200,
-                                        ),
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 14,
-                                          vertical: 10,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: sel
-                                              ? C.accentOf(dark)
-                                              : C.surface2(dark),
-                                          borderRadius: BorderRadius.circular(
-                                            100,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          event,
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600,
-                                            color: sel
-                                                ? Colors.white
-                                                : C.text2(dark),
-                                          ),
-                                        ),
+                                    child: Center(
+                                      child: AppChip(
+                                        label: event,
+                                        selected: event == _selectedEvent,
+                                        dark: dark,
+                                        small: true,
+                                        onTap: () => setState(() => _selectedEvent = event),
                                       ),
                                     ),
                                   );
@@ -853,7 +766,7 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                     FadeSlideIn(
                       delay: const Duration(milliseconds: 180),
                       child: _FoldableSection(
-                        title: 'PERSONAL RECORDS',
+                        title: 'Personal Records',
                         dark: dark,
                         child: GlassCard(
                           forceDark: dark,
@@ -892,7 +805,7 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                       FadeSlideIn(
                         delay: const Duration(milliseconds: 195),
                         child: _FoldableSection(
-                          title: 'RIVALS',
+                          title: 'Rivals',
                           subtitle: 'Closest teammate PR in each event',
                           dark: dark,
                           child: GlassCard(
@@ -923,15 +836,7 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              'LIFTING MAXES',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: C.text3(dark),
-                                letterSpacing: 0.06 * 13,
-                              ),
-                            ),
+                            SectionTitle('Lifting Maxes', dark: dark),
                             const SizedBox(height: 12),
                             GlassCard(
                               forceDark: dark,
@@ -959,23 +864,6 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                                           ),
                                     child: Row(
                                       children: [
-                                        Container(
-                                          width: 40,
-                                          height: 40,
-                                          decoration: BoxDecoration(
-                                            color: C.surface2(dark),
-                                            borderRadius: BorderRadius.circular(
-                                              10,
-                                            ),
-                                          ),
-                                          alignment: Alignment.center,
-                                          child: Icon(
-                                            Icons.fitness_center,
-                                            size: 18,
-                                            color: C.text2(dark),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 12),
                                         Expanded(
                                           child: Text(
                                             max['lift_type'] ?? '',
@@ -1013,7 +901,7 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                     FadeSlideIn(
                       delay: const Duration(milliseconds: 240),
                       child: _FoldableSection(
-                        title: 'MEET HISTORY',
+                        title: 'Meet History',
                         dark: dark,
                         child: _buildMeetHistory(dark),
                       ),
@@ -1037,66 +925,57 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
       ..sort((a, b) => a.gapPct.compareTo(b.gapPct));
   }
 
-  /// Grab handle and close button, pinned while the sheet's content scrolls.
+  /// Grab handle, pinned while the sheet's content scrolls. Swiping down
+  /// closes the sheet from any height.
   /// The name fades in once the header card scrolls away.
   Widget _sheetBar(bool dark, String name, ProfileSheet sheet) {
     final scroll = sheet.scrollController;
-    return SliverAppBar(
-      primary: false,
-      pinned: true,
-      toolbarHeight: 48,
-      backgroundColor: C.sheet(dark),
-      surfaceTintColor: Colors.transparent,
-      elevation: 0,
-      scrolledUnderElevation: 0,
-      automaticallyImplyLeading: false,
-      centerTitle: true,
-      flexibleSpace: Align(
-        alignment: Alignment.topCenter,
-        child: Container(
-          margin: const EdgeInsets.only(top: 8),
-          width: 36,
-          height: 5,
-          decoration: BoxDecoration(
-            color: C.text3(dark).withValues(alpha: 0.5),
-            borderRadius: BorderRadius.circular(3),
-          ),
+    return ListenableBuilder(
+      listenable: scroll,
+      builder: (context, _) => SliverAppBar(
+        primary: false,
+        pinned: true,
+        toolbarHeight: 48,
+        backgroundColor: _barColor(
+          dark,
+          C.sheet(dark),
+          scroll.hasClients ? scroll.offset : 0,
         ),
-      ),
-      title: ListenableBuilder(
-        listenable: scroll,
-        builder: (_, _) {
-          final offset = scroll.hasClients ? scroll.offset : 0.0;
-          return Opacity(
-            opacity: ((offset - 90) / 40).clamp(0.0, 1.0),
-            child: Text(
-              name,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: C.text1(dark),
-              ),
-            ),
-          );
-        },
-      ),
-      actions: [
-        Padding(
-          padding: const EdgeInsets.only(right: 16, top: 6),
-          child: PressScale(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              width: 30,
-              height: 30,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: C.surface2(dark),
-              ),
-              child: Icon(Icons.close, size: 15, color: C.text2(dark)),
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        automaticallyImplyLeading: false,
+        centerTitle: true,
+        flexibleSpace: Align(
+          alignment: Alignment.topCenter,
+          child: Container(
+            margin: const EdgeInsets.only(top: 8),
+            width: 36,
+            height: 5,
+            decoration: BoxDecoration(
+              color: C.text3(dark).withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(3),
             ),
           ),
         ),
-      ],
+        title: ListenableBuilder(
+          listenable: scroll,
+          builder: (_, _) {
+            final offset = scroll.hasClients ? scroll.offset : 0.0;
+            return Opacity(
+              opacity: _titleOpacity(offset),
+              child: Text(
+                name,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: C.text1(dark),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
     );
   }
 
@@ -1165,74 +1044,227 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
     );
   }
 
+  /// PRs, best gain, meets and season points as plain numbers.
   Widget _statsRow(bool dark) {
-    if (_loading) return SkeletonPulse(child: _statsSkeleton());
+    if (_loading) {
+      return SkeletonPulse(
+        child: Row(
+          children: [
+            for (var i = 0; i < 4; i++)
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SkeletonBox(width: 36, height: 20),
+                    SizedBox(height: 6),
+                    SkeletonBox(width: 52, height: 10),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+    if (_error != null) return const SizedBox.shrink();
+
+    Widget stat(String value, String label) => Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.5,
+              color: C.text1(dark),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: C.text3(dark),
+            ),
+          ),
+        ],
+      ),
+    );
+    final team = _team;
     return FadeSlideIn(
-      delay: const Duration(milliseconds: 60),
       child: Row(
         children: [
-          Expanded(
-            child: _miniStat(
-              label: 'PRs',
-              value: '${_prs.length}',
-              icon: Icons.emoji_events_outlined,
-              dark: dark,
-            ),
+          stat('${_prs.length}', 'PRs'),
+          stat(
+            _bestImprovement > 0
+                ? '+${_bestImprovement.toStringAsFixed(1)}%'
+                : '—',
+            'Best gain',
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _miniStat(
-              label: 'Best Imp.',
-              value: _bestImprovement > 0
-                  ? '+${_bestImprovement.toStringAsFixed(1)}%'
-                  : '—',
-              icon: Icons.trending_up,
-              dark: dark,
-            ),
+          stat(
+            '${_appearances.map((a) => a['meet_name']).toSet().length}',
+            'Meets',
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _miniStat(
-              label: 'Meets',
-              value:
-                  '${_appearances.map((a) => a['meet_name']).toSet().length}',
-              icon: Icons.calendar_today_outlined,
-              dark: dark,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _miniStat(
-              label: _team == null
-                  ? 'Points'
-                  : '${_team!.currentSeason.shortLabel} pts',
-              value: _team == null
-                  ? '—'
-                  : '${_team!.pointsFor(widget.athleteId, _team!.currentSeason)}',
-              icon: Icons.bolt_outlined,
-              dark: dark,
-            ),
+          stat(
+            team == null
+                ? '—'
+                : '${team.pointsFor(widget.athleteId, team.currentSeason)}',
+            team == null ? 'Points' : '${team.currentSeason.shortLabel} points',
           ),
         ],
       ),
     );
   }
 
-  Widget _statsSkeleton() => Row(
-    children: [
-      for (var i = 0; i < 4; i++) ...[
-        if (i > 0) const SizedBox(width: 10),
-        const Expanded(child: SkeletonBox(height: 78, radius: 16)),
-      ],
-    ],
-  );
+  /// Avatar, name and details over a soft wash of the team color, then the
+  /// stat strip. No card around it, so the profile opens on the athlete.
+  Widget _hero(bool dark, String name, bool isFemale) {
+    final details = [?_standing, isFemale ? 'Women' : 'Men'].join(' · ');
+    return WashHeader(
+      dark: dark,
+      base: widget.sheet != null ? C.sheet(dark) : C.bg(dark),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+      child: FadeSlideIn(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: isFemale
+                          ? const [Color(0xFFD4537E), Color(0xFFED93B1)]
+                          : [C.accentOf(dark), C.accentAlt],
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: isFemale
+                            ? const Color(0x59D4537E)
+                            : const Color(0x59E8372D),
+                        blurRadius: 20,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    _initials(widget.athleteName),
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 26,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.8,
+                          height: 1.1,
+                          color: C.text1(dark),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        details,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: C.text2(dark),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            _statsRow(dark),
+          ],
+        ),
+      ),
+    );
+  }
 
-  Widget _buildSkeleton({bool stats = true}) {
+  /// The strongest insights as a swipeable row of cards, edge to edge.
+  Widget _insightsRail(bool dark) {
+    final team = _team;
+    final prefs = Prefs.of(context);
+    final insights = athleteInsights(
+      appearances: _appearances,
+      ranks: _ranks,
+      rivals: team?.rivalsOf(widget.athleteId) ?? const {},
+      records: {
+        for (final pr in _prs)
+          if (_getRecordForPR(pr) case final r?)
+            if (((isFieldEvent(pr['event'] ?? '') ? r['record_mark_meters'] : r['record_mark_seconds']) as num?)
+                case final value?)
+              pr['event'] as String: RecordRef(
+                value: value.toDouble(),
+                display: r['record_display'] as String? ?? '',
+                holder: r['holder_name'] as String? ?? '',
+                year: (r['year_set'] as num?)?.toInt(),
+              ),
+      },
+      nameOf: team?.nameOf,
+      formatMark: (event, display, value) => prefs.mark(event, display, value),
+      formatGap: prefs.gap,
+      now: DateTime.now(),
+    );
+    if (insights.isEmpty) return const SizedBox.shrink();
+
+    final textGrowth = (MediaQuery.textScalerOf(context).scale(14) / 14 - 1)
+        .clamp(0.0, 1.0);
+    return FadeSlideIn(
+      delay: const Duration(milliseconds: 60),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SectionTitle('Insights', dark: dark),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 128 + textGrowth * 70,
+            // Break out of the page padding so the row runs to the edges.
+            child: OverflowBox(
+              maxWidth: MediaQuery.sizeOf(context).width,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                itemCount: insights.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 10),
+                itemBuilder: (_, i) =>
+                    _InsightCard(insight: insights[i], dark: dark),
+              ),
+            ),
+          ),
+          const SizedBox(height: 28),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSkeleton() {
     return SkeletonPulse(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (stats) ...[_statsSkeleton(), const SizedBox(height: 28)],
           const SkeletonBox(width: 110, height: 12),
           const SizedBox(height: 12),
           const SkeletonBox(height: 280, radius: 16),
@@ -1249,34 +1281,12 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
     return Padding(
       padding: const EdgeInsets.only(top: 40),
       child: Center(
-        child: Column(
-          children: [
-            Icon(Icons.cloud_off_outlined, size: 40, color: C.text3(dark)),
-            const SizedBox(height: 12),
-            Text(_error!, style: TextStyle(fontSize: 15, color: C.text3(dark))),
-            const SizedBox(height: 16),
-            PressScale(
-              onTap: _retry,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: C.accentOf(dark),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Text(
-                  'Try again',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ),
-          ],
+        child: EmptyState(
+          icon: Icons.cloud_off_outlined,
+          title: _error!,
+          actionLabel: 'Try again',
+          onAction: _retry,
+          dark: dark,
         ),
       ),
     );
@@ -1297,158 +1307,37 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
       ..sort((a, b) => (meetDates[b] ?? '').compareTo(meetDates[a] ?? ''));
 
     if (sortedMeets.isEmpty) {
-      return GlassCard(
-        forceDark: dark,
-        padding: const EdgeInsets.all(24),
-        child: Center(
-          child: Text(
-            'No meet history',
-            style: TextStyle(fontSize: 13, color: C.text3(dark)),
-          ),
-        ),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: EmptyState(icon: Icons.event_outlined, title: 'No meets yet', dark: dark),
       );
     }
 
-    return Column(
-      children: sortedMeets.take(10).map((meet) {
-        final results = byMeet[meet]!;
-        final date = meetDates[meet] ?? '';
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: GlassCard(
-            forceDark: dark,
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        meet,
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: C.text1(dark),
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      _formatDateLabel(date),
-                      style: TextStyle(fontSize: 12, color: C.text3(dark)),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                ...results.map((r) {
-                  final event = r['event'] ?? '';
-                  final display = Prefs.of(
-                    context,
-                  ).mark(event, r['display_value'], r['mark_meters']);
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Row(
-                      children: [
-                        SizedBox(
-                          width: 100,
-                          child: Text(
-                            event,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: C.text2(dark),
-                            ),
-                          ),
-                        ),
-                        Text(
-                          display,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: C.text1(dark),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }),
-              ],
-            ),
-          ),
-        );
-      }).toList(),
-    );
-  }
-
-  String _formatDateLabel(String date) {
-    if (date.isEmpty) return '';
-    try {
-      final parts = date.split('-');
-      final months = [
-        '',
-        'Jan',
-        'Feb',
-        'Mar',
-        'Apr',
-        'May',
-        'Jun',
-        'Jul',
-        'Aug',
-        'Sep',
-        'Oct',
-        'Nov',
-        'Dec',
-      ];
-      return "${months[int.parse(parts[1])]} '${parts[0].substring(2)}";
-    } catch (_) {
-      return date;
-    }
-  }
-
-  Widget _pill(String text, Color bg, Color fg) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(100),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: fg),
-      ),
-    );
-  }
-
-  Widget _miniStat({
-    required String label,
-    required String value,
-    required IconData icon,
-    required bool dark,
-  }) {
+    final prefs = Prefs.of(context);
+    final meets = sortedMeets.take(10).toList();
     return GlassCard(
       forceDark: dark,
-      padding: const EdgeInsets.all(14),
       child: Column(
         children: [
-          Icon(icon, size: 16, color: C.text3(dark)),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.5,
-              color: C.text1(dark),
+          for (var i = 0; i < meets.length; i++)
+            _MeetRow(
+              meet: meets[i],
+              date: parseMeetDate(meetDates[meets[i]]),
+              results: [
+                for (final r in byMeet[meets[i]]!)
+                  (
+                    r['event'] as String? ?? '',
+                    prefs.mark(r['event'] ?? '', r['display_value'], r['mark_meters']),
+                  ),
+              ],
+              isLast: i == meets.length - 1,
+              dark: dark,
             ),
-          ),
-          const SizedBox(height: 2),
-          Text(label, style: TextStyle(fontSize: 11, color: C.text3(dark))),
         ],
       ),
     );
   }
+
 }
 
 // ─── Chart data model ───────────────────────────────────────────────────────
@@ -2054,15 +1943,7 @@ class _FoldableSectionState extends State<_FoldableSection>
               Row(
                 children: [
                   Expanded(
-                    child: Text(
-                      widget.title,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: C.text3(dark),
-                        letterSpacing: 0.06 * 13,
-                      ),
-                    ),
+                    child: Text(widget.title, style: SectionTitle.style(dark)),
                   ),
                   AnimatedRotation(
                     turns: _open ? 0 : -0.25,
@@ -2098,6 +1979,147 @@ class _FoldableSectionState extends State<_FoldableSection>
           ),
         ),
       ],
+    );
+  }
+}
+
+// ─── Meet row ───────────────────────────────────────────────────────────────
+
+/// One meet in the history: a date block, the meet, and each event's mark.
+class _MeetRow extends StatelessWidget {
+  final String meet;
+  final DateTime? date;
+  final List<(String, String)> results;
+  final bool isLast;
+  final bool dark;
+
+  const _MeetRow({
+    required this.meet,
+    required this.date,
+    required this.results,
+    required this.isLast,
+    required this.dark,
+  });
+
+  static const _months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+
+  @override
+  Widget build(BuildContext context) {
+    final d = date;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: isLast
+          ? null
+          : BoxDecoration(border: Border(bottom: BorderSide(color: C.border(dark), width: 0.5))),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 44,
+            child: d == null
+                ? null
+                : Column(
+                    children: [
+                      Text(_months[d.month - 1],
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.4, color: C.accentOf(dark))),
+                      Text('${d.day}',
+                          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: -0.6, height: 1.1, color: C.text1(dark))),
+                      Text("'${(d.year % 100).toString().padLeft(2, '0')}",
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: C.text3(dark))),
+                    ],
+                  ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(meet,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, height: 1.25, color: C.text1(dark))),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 14,
+                  runSpacing: 4,
+                  children: [
+                    for (final (event, mark) in results)
+                      Text.rich(TextSpan(children: [
+                        TextSpan(text: '$event  ', style: TextStyle(fontSize: 12, color: C.text3(dark))),
+                        TextSpan(text: mark, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: C.text1(dark))),
+                      ])),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Insight card ───────────────────────────────────────────────────────────
+
+class _InsightCard extends StatelessWidget {
+  final Insight insight;
+  final bool dark;
+
+  const _InsightCard({required this.insight, required this.dark});
+
+  static const _icons = {
+    InsightKind.schoolRecord: Icons.military_tech_rounded,
+    InsightKind.freshPr: Icons.emoji_events_rounded,
+    InsightKind.trend: Icons.trending_up_rounded,
+    InsightKind.nationals: Icons.flag_rounded,
+    InsightKind.seasonPace: Icons.speed_rounded,
+    InsightKind.rival: Icons.compare_arrows_rounded,
+    InsightKind.drought: Icons.hourglass_bottom_rounded,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 236,
+      padding: const EdgeInsets.all(16),
+      decoration: cardDecoration(dark),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: C.accentSoft(dark),
+            ),
+            child: Icon(
+              _icons[insight.kind],
+              size: 17,
+              color: C.accentOf(dark),
+            ),
+          ),
+          const Spacer(),
+          Text(
+            insight.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.2,
+              color: C.text1(dark),
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            insight.detail,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 12.5, height: 1.3, color: C.text2(dark)),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -2232,8 +2254,6 @@ class _RivalRow extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(width: 4),
-            Icon(Icons.chevron_right, size: 14, color: C.text3(dark)),
           ],
         ),
       ),

@@ -124,7 +124,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final results = await supabase
           .from('profiles')
-          .select('id, full_name, tfrrs_athlete_id')
+          .select('id, full_name, gender, tfrrs_athlete_id')
           .not('tfrrs_athlete_id', 'is', null)
           .ilike('full_name', '%$query%')
           .limit(10);
@@ -197,40 +197,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
 
     // Otherwise show the linking flow
+    final name = _profile?['full_name'] as String? ?? 'Unknown';
     return Scaffold(
       backgroundColor: C.bg(dark),
-      body: SafeArea(
-        bottom: false,
-        child: _profile == null
-            ? Center(child: Text('Profile not found', style: TextStyle(color: C.text3(dark))))
-            : ListView(
-                padding: const EdgeInsets.only(bottom: 104),
-                children: [
-                  FadeSlideIn(
-                    delay: const Duration(milliseconds: 0),
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                      child: Text(
-                        'My Profile',
-                        style: TextStyle(
-                          fontSize: 32,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.96,
-                          color: C.text1(dark),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Profile card
-                  FadeSlideIn(
-                    delay: const Duration(milliseconds: 80),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: GlassCard(
-                        forceDark: dark,
-                        padding: const EdgeInsets.all(24),
+      body: _profile == null
+          ? Center(child: EmptyState(icon: Icons.person_off_outlined, title: 'Profile not found', dark: dark))
+          : ListView(
+              padding: const EdgeInsets.only(bottom: 120),
+              children: [
+                WashHeader(
+                  dark: dark,
+                  padding: EdgeInsets.fromLTRB(20, MediaQuery.paddingOf(context).top + 16, 20, 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('My Profile', style: pageTitleStyle(dark)),
+                      const SizedBox(height: 24),
+                      FadeSlideIn(
                         child: Row(
                           children: [
                             Container(
@@ -241,15 +224,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 gradient: LinearGradient(
                                   begin: Alignment.topLeft,
                                   end: Alignment.bottomRight,
-                                  colors: [C.accentOf(dark), C.accentAlt],
+                                  colors: [C.accentAlt, C.accentOf(false)],
                                 ),
                                 boxShadow: [
-                                  BoxShadow(color: Color(0x59E8372D), blurRadius: 20, offset: Offset(0, 4))
+                                  BoxShadow(color: C.accentOf(dark).withValues(alpha: 0.3), blurRadius: 24, offset: const Offset(0, 8)),
                                 ],
                               ),
                               alignment: Alignment.center,
                               child: Text(
-                                _initials(_profile!['full_name'] ?? 'U'),
+                                _initials(name),
                                 style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: Colors.white),
                               ),
                             ),
@@ -259,21 +242,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    formatName(_profile!['full_name'] ?? 'Unknown'),
-                                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, letterSpacing: -0.4, color: C.text1(dark)),
+                                    formatName(name),
+                                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: -0.6, color: C.text1(dark)),
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    _profile!['role'] == 'coach' ? 'Coach' : 'Athlete',
-                                    style: TextStyle(fontSize: 13, color: C.text3(dark)),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Row(
-                                    children: [
-                                      _pill('0 PRs', C.accentSoft(dark), C.accentOf(dark)),
-                                      const SizedBox(width: 8),
-                                      _pill('Track', C.surface2(dark), C.text2(dark)),
-                                    ],
+                                    _profile!['role'] == 'coach' ? 'Coach' : 'Athlete · not linked to TFRRS yet',
+                                    style: TextStyle(fontSize: 14, color: C.text2(dark)),
                                   ),
                                 ],
                               ),
@@ -281,190 +256,119 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ],
                         ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Link section
-                  if (_showSearch && !_linked)
-                    FadeSlideIn(
-                      delay: const Duration(milliseconds: 120),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: _buildLinkSection(dark),
-                      ),
-                    ),
-                ],
-              ),
-      ),
-    );
-  }
-
-  Widget _buildLinkSection(bool dark) {
-    return GlassCard(
-      forceDark: dark,
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.link, size: 16, color: C.accentOf(dark)),
-              const SizedBox(width: 8),
-              Text(
-                'LINK YOUR TFRRS PROFILE',
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8, color: C.accentOf(dark)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text('Find your name to connect your race results and PRs.', style: TextStyle(fontSize: 13, color: C.text3(dark))),
-          const SizedBox(height: 14),
-
-          Container(
-            height: 42,
-            decoration: BoxDecoration(
-              color: C.field(dark),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(left: 12, right: 8),
-                  child: Icon(Icons.search, size: 16, color: C.text3(dark)),
-                ),
-                Expanded(
-                  child: TextField(
-                    controller: _searchCtrl,
-                    style: TextStyle(fontSize: 15, color: C.text1(dark)),
-                    decoration: InputDecoration(
-                      hintText: 'Search by name…',
-                      hintStyle: TextStyle(color: C.text3(dark), fontSize: 15),
-                      border: InputBorder.none,
-                      isDense: true,
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                    onChanged: _onSearchChanged,
+                    ],
                   ),
                 ),
-                if (_searchCtrl.text.isNotEmpty)
-                  GestureDetector(
-                    onTap: () {
-                      _searchDebounce?.cancel();
-                      _searchSeq++; // drop any search still in flight
-                      _searchCtrl.clear();
-                      setState(() {
-                        _searchResults = [];
-                        _searching = false;
-                      });
-                    },
+                if (_showSearch && !_linked)
+                  FadeSlideIn(
+                    delay: const Duration(milliseconds: 80),
                     child: Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: Icon(Icons.close, size: 16, color: C.text3(dark)),
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: _buildLinkSection(dark),
                     ),
                   ),
               ],
             ),
-          ),
+    );
+  }
 
-          if (_searching)
-            Padding(
-              padding: EdgeInsets.only(top: 16),
-              child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: C.accentOf(dark), strokeWidth: 2))),
+  Widget _buildLinkSection(bool dark) {
+    final query = _searchCtrl.text;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SectionTitle('Link your TFRRS profile', dark: dark),
+        const SizedBox(height: 6),
+        Text(
+          'Find your name to bring in your race results and PRs.',
+          style: TextStyle(fontSize: 14, height: 1.4, color: C.text2(dark)),
+        ),
+        const SizedBox(height: 16),
+        InputField(
+          controller: _searchCtrl,
+          hint: 'Search by name',
+          icon: Icons.search,
+          dark: dark,
+          onChanged: _onSearchChanged,
+          onClear: () {
+            _searchDebounce?.cancel();
+            _searchSeq++; // drop any search still in flight
+            setState(() {
+              _searchResults = [];
+              _searching = false;
+            });
+          },
+        ),
+        const SizedBox(height: 16),
+        if (_searching || _linking)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Column(
+              children: [
+                SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: C.accentOf(dark), strokeWidth: 2)),
+                if (_linking) ...[
+                  const SizedBox(height: 10),
+                  Text('Linking your profile…', style: TextStyle(fontSize: 14, color: C.text2(dark))),
+                ],
+              ],
             ),
+          )
+        else if (_searchResults.isNotEmpty)
+          GlassCard(
+            forceDark: dark,
+            padding: EdgeInsets.zero,
+            child: Column(
+              children: [
+                for (var i = 0; i < _searchResults.length; i++) ...[
+                  if (i > 0) Divider(height: 0.5, thickness: 0.5, indent: 68, color: C.border(dark)),
+                  _resultRow(_searchResults[i], dark),
+                ],
+              ],
+            ),
+          )
+        else if (query.length >= 2)
+          EmptyState(icon: Icons.search_off_rounded, title: 'No athletes found', message: 'Try your last name.', dark: dark),
+      ],
+    );
+  }
 
-          if (_linking)
-            Padding(
-              padding: const EdgeInsets.only(top: 16),
-              child: Center(
-                child: Column(
-                  children: [
-                    SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: C.accentOf(dark), strokeWidth: 2)),
-                    const SizedBox(height: 8),
-                    Text('Linking your profile…', style: TextStyle(fontSize: 13, color: C.text3(dark))),
-                  ],
-                ),
+  Widget _resultRow(Map<String, dynamic> result, bool dark) {
+    final raw = result['full_name'] as String? ?? '';
+    return PressScale(
+      pressedScale: 0.98,
+      onTap: () => _confirmLink(result),
+      child: Container(
+        color: Colors.transparent,
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: Row(
+          children: [
+            InitialsAvatar(name: raw, gender: result['gender'] as String? ?? 'M', dark: dark),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(formatName(raw), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: C.text1(dark))),
+                  Text('TFRRS #${result['tfrrs_athlete_id'] ?? ''}', style: TextStyle(fontSize: 13, color: C.text3(dark))),
+                ],
               ),
             ),
-
-          if (!_searching && !_linking && _searchResults.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            ...(_searchResults.map((result) {
-              final name = formatName(result['full_name'] ?? 'Unknown');
-              final tfrrsId = result['tfrrs_athlete_id'] ?? '';
-              return InkWell(
-                onTap: () => _confirmLink(result, dark),
-                borderRadius: BorderRadius.circular(10),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(shape: BoxShape.circle, color: C.surface2(dark)),
-                        alignment: Alignment.center,
-                        child: Text(
-                          _initials(result['full_name'] ?? ''),
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: C.text2(dark)),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(name, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: C.text1(dark))),
-                            Text('TFRRS #$tfrrsId', style: TextStyle(fontSize: 11, color: C.text3(dark))),
-                          ],
-                        ),
-                      ),
-                      Icon(Icons.chevron_right, size: 16, color: C.text3(dark)),
-                    ],
-                  ),
-                ),
-              );
-            })),
           ],
-
-          if (!_searching && !_linking && _searchResults.isEmpty && _searchCtrl.text.length >= 2)
-            Padding(
-              padding: const EdgeInsets.only(top: 16),
-              child: Center(child: Text('No athletes found', style: TextStyle(fontSize: 13, color: C.text3(dark)))),
-            ),
-        ],
-      ),
-    );
-  }
-
-  void _confirmLink(Map<String, dynamic> tfrrsProfile, bool dark) {
-    final name = formatName(tfrrsProfile['full_name'] ?? 'Unknown');
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: C.surface(dark),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Link to $name?', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: C.text1(dark))),
-        content: Text(
-          'This will connect your account to this athlete\'s TFRRS data, including all PRs and meet results.',
-          style: TextStyle(fontSize: 14, color: C.text2(dark)),
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Cancel', style: TextStyle(color: C.text3(dark)))),
-          TextButton(
-            onPressed: () { Navigator.pop(ctx); _linkProfile(tfrrsProfile); },
-            child: Text('Link', style: TextStyle(color: C.accentOf(dark), fontWeight: FontWeight.w600)),
-          ),
-        ],
       ),
     );
   }
 
-  Widget _pill(String text, Color bg, Color fg) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(100)),
-      child: Text(text, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: fg)),
+  Future<void> _confirmLink(Map<String, dynamic> tfrrsProfile) async {
+    final name = formatName(tfrrsProfile['full_name'] ?? 'Unknown');
+    final confirmed = await confirmAction(
+      context,
+      title: 'Are you $name?',
+      message: "Their PRs, meets and rankings from TFRRS will move onto your account.",
+      confirmLabel: "Yes, that's me",
+      cancelLabel: 'Not me',
     );
+    if (confirmed && mounted) _linkProfile(tfrrsProfile);
   }
+
 }

@@ -2,6 +2,7 @@
 // says what goes and what stays, then the deletion and a sign-out).
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile_app/design_system.dart';
 import 'package:mobile_app/settings_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -116,6 +117,16 @@ void main() {
     await tester.tap(find.text('Sign Out').last);
     await tester.pumpAndSettle();
     expect(api.signedOut, isTrue);
+  });
+
+  testWidgets('the header wash spans the whole width', (tester) async {
+    tester.view.physicalSize = const Size(402, 874) * 3;
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MaterialApp(home: SettingsScreen(api: FakeApi())));
+    await tester.pumpAndSettle();
+    final wash = find.descendant(of: find.byType(WashHeader), matching: find.byType(Container)).first;
+    expect(tester.getSize(wash).width, 402);
   });
 }
 

@@ -111,8 +111,8 @@ void main() {
 
     expect(find.text('Sophomore'), findsOneWidget);
     expect(find.text('Freshman'), findsOneWidget);
-    expect(find.text('ALUMNI'), findsOneWidget);
-    final alumniTop = tester.getTopLeft(find.text('ALUMNI')).dy;
+    expect(find.text('Alumni'), findsOneWidget);
+    final alumniTop = tester.getTopLeft(find.text('Alumni')).dy;
     expect(tester.getTopLeft(find.text('James Johnson')).dy, greaterThan(alumniTop));
     expect(tester.getTopLeft(find.text('Daniel Okafor')).dy, lessThan(alumniTop));
 
@@ -120,7 +120,7 @@ void main() {
     await tester.enterText(find.byType(TextField), 'j');
     await tester.pumpAndSettle();
     expect(find.text('James Johnson'), findsOneWidget);
-    expect(find.text('ALUMNI'), findsOneWidget);
+    expect(find.text('Alumni'), findsOneWidget);
 
     await tester.tap(find.text('James Johnson'));
     await tester.pumpAndSettle();
@@ -141,11 +141,11 @@ void main() {
     }
 
     await open('okafor', 'Okafor, Daniel', 'M');
-    expect(find.text('Junior'), findsOneWidget);
+    expect(find.text('Junior · Men'), findsOneWidget);
     expect(find.textContaining('Alum'), findsNothing);
 
     await open('chen', 'Chen, Lily', 'F');
-    expect(find.text('Junior'), findsNothing);
+    expect(find.textContaining('Junior'), findsNothing);
     expect(find.textContaining('Alum'), findsOneWidget);
   });
 }

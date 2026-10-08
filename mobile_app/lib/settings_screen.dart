@@ -38,27 +38,19 @@ class SettingsScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: C.bg(dark),
       body: SafeArea(
+        top: false,
         bottom: false,
         child: ListView(
           padding: const EdgeInsets.only(bottom: 104),
           children: [
             // ── Title ─────────────────────────────────────────
-            FadeSlideIn(
-              delay: const Duration(milliseconds: 0),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                child: Text(
-                  'Settings',
-                  style: TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.96,
-                    color: C.text1(dark),
-                  ),
-                ),
+            WashHeader(
+              dark: dark,
+              padding: EdgeInsets.fromLTRB(20, MediaQuery.paddingOf(context).top + 16, 20, 24),
+              child: FadeSlideIn(
+                child: Text('Settings', style: pageTitleStyle(dark)),
               ),
             ),
-            const SizedBox(height: 24),
 
             // ── Account ────────────────────────────────────────
             FadeSlideIn(
@@ -148,36 +140,24 @@ class SettingsScreen extends StatelessWidget {
               delay: const Duration(milliseconds: 240),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: GlassCard(
-                  forceDark: dark,
-                  child: PressScale(
-                    onTap: () async {
-                      if (await confirmAction(
-                        context,
-                        title: 'Sign out?',
-                        message: "You'll need your email and password to sign back in.",
-                        confirmLabel: 'Sign Out',
-                      )) {
-                        await api.signOut();
-                      }
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.logout, size: 16, color: C.accentOf(dark)),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Sign Out',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: C.accentOf(dark),
-                            ),
-                          ),
-                        ],
-                      ),
+                child: PressScale(
+                  onTap: () async {
+                    if (await confirmAction(
+                      context,
+                      title: 'Sign out?',
+                      message: "You'll need your email and password to sign back in.",
+                      confirmLabel: 'Sign Out',
+                    )) {
+                      await api.signOut();
+                    }
+                  },
+                  child: Container(
+                    height: 52,
+                    alignment: Alignment.center,
+                    decoration: cardDecoration(dark, radius: 16),
+                    child: Text(
+                      'Sign Out',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: C.accentOf(dark)),
                     ),
                   ),
                 ),
@@ -230,12 +210,15 @@ class SettingsScreen extends StatelessWidget {
 
 Future<void> _confirmDelete(BuildContext context, OnboardingApi api) async {
   HapticFeedback.mediumImpact();
-  final confirmed = await showModalBottomSheet<bool>(
-    context: context,
-    backgroundColor: Colors.transparent,
-    builder: (_) => const _DeleteAccountSheet(),
+  final dark = Theme.of(context).brightness == Brightness.dark;
+  final confirmed = await confirmAction(
+    context,
+    title: 'Delete your account?',
+    body: _DeletePoints(dark: dark),
+    confirmLabel: 'Delete account',
+    destructive: true,
   );
-  if (confirmed != true || !context.mounted) return;
+  if (!confirmed || !context.mounted) return;
   final sure = await confirmAction(
     context,
     title: 'Are you sure?',
@@ -266,73 +249,44 @@ Future<void> _confirmDelete(BuildContext context, OnboardingApi api) async {
 }
 
 /// Says exactly what deleting removes and what stays before it happens.
-class _DeleteAccountSheet extends StatelessWidget {
-  const _DeleteAccountSheet();
+class _DeletePoints extends StatelessWidget {
+  final bool dark;
+
+  const _DeletePoints({required this.dark});
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
     Widget point(IconData icon, String text) => Padding(
-          padding: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.only(bottom: 14),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(icon, size: 18, color: C.text3(dark)),
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(color: C.surface2(dark), shape: BoxShape.circle),
+                alignment: Alignment.center,
+                child: Icon(icon, size: 16, color: C.text2(dark)),
+              ),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(text, style: TextStyle(fontSize: 14, height: 1.4, color: C.text2(dark))),
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 5),
+                  child: Text(text, style: TextStyle(fontSize: 14, height: 1.4, color: C.text2(dark))),
+                ),
               ),
             ],
           ),
         );
 
-    return Container(
-      decoration: BoxDecoration(
-        color: C.sheet(dark),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Center(
-              child: Container(
-                width: 36,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: C.text3(dark).withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(3),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'Delete your account?',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, letterSpacing: -0.4, color: C.text1(dark)),
-            ),
-            const SizedBox(height: 16),
-            point(Icons.person_off_outlined, 'Your login and lifting maxes are deleted.'),
-            point(Icons.emoji_events_outlined,
-                "Your TFRRS results stay on your team's leaderboards, since "
-                "they're public. If you come back, you can link them again."),
-            point(Icons.warning_amber_rounded, "This can't be undone."),
-            const SizedBox(height: 8),
-            PrimaryButton(
-              label: 'Delete account',
-              onTap: () => Navigator.of(context).pop(true),
-              dark: dark,
-            ),
-            const SizedBox(height: 4),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: Text('Cancel', style: TextStyle(fontSize: 15, color: C.text2(dark))),
-            ),
-          ],
-        ),
-      ),
+    return Column(
+      children: [
+        point(Icons.person_off_outlined, 'Your login and lifting maxes are deleted.'),
+        point(Icons.emoji_events_outlined,
+            "Your TFRRS results stay on your team's leaderboards, since "
+            "they're public. If you come back, you can link them again."),
+        point(Icons.warning_amber_rounded, "This can't be undone."),
+      ],
     );
   }
 }
@@ -498,7 +452,7 @@ class UnitsSettingsScreen extends StatelessWidget {
     return _SubScreen(
       title: 'Units',
       children: [
-        _SectionHeader('Field events', dark),
+        _SectionHeader('Field Events', dark),
         _Group(
           dark: dark,
           children: [
@@ -567,10 +521,17 @@ class _SubScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: C.bg(dark),
       body: SafeArea(
+        top: false,
         bottom: false,
         child: ListView(
           padding: const EdgeInsets.only(bottom: 104),
           children: [
+            WashHeader(
+              dark: dark,
+              padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 20, 0),
               child: Align(
@@ -593,12 +554,10 @@ class _SubScreen extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
               child: Text(
                 title,
-                style: TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.96,
-                  color: C.text1(dark),
-                ),
+                style: pageTitleStyle(dark),
+              ),
+            ),
+                ],
               ),
             ),
             FadeSlideIn(
@@ -628,7 +587,7 @@ class _Group extends StatelessWidget {
         forceDark: dark,
         // Clip so the pressed-row highlight keeps the card's corners.
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
           child: Column(children: children),
         ),
       ),
@@ -749,15 +708,7 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-      child: Text(
-        text.toUpperCase(),
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-          color: C.text3(dark),
-          letterSpacing: 0.06 * 13, // 0.06em @ 13px
-        ),
-      ),
+      child: SectionTitle(text, dark: dark),
     );
   }
 }
@@ -814,15 +765,15 @@ class _SettingsRowState extends State<_SettingsRow> {
                   ? CrossAxisAlignment.start
                   : CrossAxisAlignment.center,
               children: [
-                // Icon box
+                // Icon tile
                 Container(
-                  width: 36,
-                  height: 36,
+                  width: 32,
+                  height: 32,
                   decoration: BoxDecoration(
-                    color: C.surface2(widget.dark),
-                    borderRadius: BorderRadius.circular(10),
+                    color: C.accentSoft(widget.dark),
+                    borderRadius: BorderRadius.circular(9),
                   ),
-                  child: Icon(widget.icon, size: 18, color: C.text2(widget.dark)),
+                  child: Icon(widget.icon, size: 17, color: C.accentOf(widget.dark)),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -861,7 +812,7 @@ class _SettingsRowState extends State<_SettingsRow> {
           Container(
             height: 0.5,
             color: C.border(widget.dark),
-            margin: const EdgeInsets.only(left: 70),
+            margin: const EdgeInsets.only(left: 66),
           ),
       ],
     );

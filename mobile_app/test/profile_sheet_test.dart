@@ -127,12 +127,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(profileTop(tester), closeTo(62 + 8, 1));
 
-    // Closing from the top lets the screen behind spring back.
-    await tester.tap(find.byIcon(Icons.close));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(sheetDepth.value, inExclusiveRange(0, 1));
+    // No close button: swiping down from the top closes it, and the screen
+    // behind springs back.
+    expect(find.byIcon(Icons.close), findsNothing);
+    await tester.fling(find.text('Lily Chen').first, const Offset(0, 800), 3000);
     await tester.pumpAndSettle();
+    expect(find.byType(AthleteProfileScreen), findsNothing);
     expect(sheetDepth.value, 0);
   });
 }
