@@ -58,7 +58,16 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
       }
     });
     final cached = TeamData.instance.cached;
-    if (cached != null) _apply(cached);
+    if (cached != null) {
+      _apply(cached);
+    } else {
+      // Last time's copy from the phone, while the latest downloads.
+      TeamData.instance.restore().then((snap) {
+        if (snap == null || !mounted || _snap != null) return;
+        setState(() => _apply(snap));
+        ActivityFeed.instance.refresh(snap);
+      });
+    }
     _load();
   }
 
@@ -80,7 +89,14 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
       }
     } catch (_) {
       if (!mounted) return;
-      if (_snap != null) {
+      // Offline at launch: last time's copy, if the phone has one.
+      final saved = _snap ?? await TeamData.instance.restore();
+      if (!mounted) return;
+      if (saved != null) {
+        if (_snap == null) {
+          setState(() => _apply(saved));
+          ActivityFeed.instance.refresh(saved);
+        }
         // Keep showing what we have; just say the refresh failed.
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Couldn't refresh. Check your connection.")),
