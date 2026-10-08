@@ -83,31 +83,35 @@ void main() {
     expect(find.text('Daniel Okafor'), findsWidgets);
   }
 
-  final gender = find.byKey(const ValueKey('gender'));
+  final filters = find.byKey(const ValueKey('filters'));
 
-  testWidgets('the gender switch shows only the current choice until tapped', (tester) async {
+  testWidgets('the filter pill shows the current choices until tapped', (tester) async {
     await openBoard(tester);
-    expect(find.descendant(of: gender, matching: find.text('All')), findsOneWidget);
+    expect(find.descendant(of: filters, matching: find.text('Outdoor · All')), findsOneWidget);
     expect(find.text('M'), findsNothing);
-    expect(find.text('F'), findsNothing);
+    expect(find.text('Indoor'), findsNothing);
 
-    await tester.tap(gender);
+    await tester.tap(filters);
     await tester.pumpAndSettle();
     expect(find.text('M'), findsOneWidget);
     expect(find.text('F'), findsOneWidget);
+    expect(find.text('Indoor'), findsOneWidget);
 
     await tester.tap(find.text('F'));
     await tester.pumpAndSettle();
     expect(find.text('Daniel Okafor'), findsNothing);
     expect(find.text('Lily Chen'), findsWidgets);
-    // Folded back up, showing the new choice.
+
+    // It folds itself up shortly after a pick, showing the new choice.
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
     expect(find.text('M'), findsNothing);
-    expect(find.descendant(of: gender, matching: find.text('F')), findsOneWidget);
+    expect(find.descendant(of: filters, matching: find.text('Outdoor · F')), findsOneWidget);
   });
 
-  testWidgets('tapping elsewhere folds the gender switch without changing it', (tester) async {
+  testWidgets('tapping elsewhere folds the filter pill without changing anything', (tester) async {
     await openBoard(tester);
-    await tester.tap(gender);
+    await tester.tap(filters);
     await tester.pumpAndSettle();
     await tester.tapAt(const Offset(200, 700));
     await tester.pumpAndSettle();
@@ -115,10 +119,10 @@ void main() {
     expect(find.text('Daniel Okafor'), findsWidgets);
   });
 
-  testWidgets('pressing and sliding down the gender switch picks where you let go', (tester) async {
+  testWidgets('pressing and sliding down the gender column picks where you let go', (tester) async {
     await openBoard(tester);
-    final top = tester.getCenter(gender);
-    final gesture = await tester.startGesture(top);
+    // The right end of the pill is over the gender column once it opens.
+    final gesture = await tester.startGesture(tester.getTopRight(filters) + const Offset(-12, 21));
     await tester.pump(const Duration(milliseconds: 600)); // a long press opens it
     await tester.pumpAndSettle();
     await gesture.moveTo(tester.getCenter(find.text('M')));
@@ -129,8 +133,10 @@ void main() {
     expect(find.text('Daniel Okafor'), findsWidgets);
 
     await gesture.up();
+    await tester.pump(const Duration(seconds: 1));
     await tester.pumpAndSettle();
     expect(find.text('Daniel Okafor'), findsNothing);
     expect(find.text('Lily Chen'), findsWidgets);
+    expect(find.descendant(of: filters, matching: find.text('Outdoor · F')), findsOneWidget);
   });
 }

@@ -1,4 +1,8 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 
 // ─── Spring curve ─────────────────────────────────────────────────────────────
@@ -11,6 +15,26 @@ class SpringCurve extends Curve {
     return 1 - (1 - t) * (1 - t) * (1 - t);
   }
 }
+
+/// A damped spring's motion as a curve: a quick start and a soft settle
+/// with a slight overshoot, like iOS. [damping] below 1 overshoots.
+class SpringPhysicsCurve extends Curve {
+  final double damping;
+
+  const SpringPhysicsCurve({this.damping = 0.72});
+
+  @override
+  double transformInternal(double t) {
+    // Fast enough to settle within the curve's duration.
+    const w = 9.0;
+    final wd = w * math.sqrt(1 - damping * damping);
+    return 1 -
+        math.exp(-damping * w * t) *
+            (math.cos(wd * t) + damping * w / wd * math.sin(wd * t));
+  }
+}
+
+const kFluid = SpringPhysicsCurve();
 
 // ─── Color system ─────────────────────────────────────────────────────────────
 class C {
@@ -940,204 +964,320 @@ Future<bool> confirmAction(
   return confirmed ?? false;
 }
 
-// ─── Drop toggle ──────────────────────────────────────────────────────────────
+// ─── Filter pill ──────────────────────────────────────────────────────────────
 
-/// A pick-one switch folded down to its current choice. Tap it and the
-/// other choices drop down below it, in the same sliding-pill style as
-/// [SegmentToggle]; tap one, or press and slide down and let go on one.
-/// Tapping anywhere else folds it back up.
-class DropToggle extends StatefulWidget {
+/// One column of a [FilterPill]: pick one of [options].
+class FilterGroup {
   final List<String> options;
   final String value;
-  final bool dark;
   final ValueChanged<String> onChanged;
-  final double width;
-  final double height;
 
-  const DropToggle({
-    super.key,
+  const FilterGroup({
     required this.options,
     required this.value,
-    required this.dark,
     required this.onChanged,
-    this.width = 64,
+  });
+}
+
+/// Filters folded into one pill that reads like "Outdoor · All". Tap it and
+/// it springs open downward into a column per filter, the highlight
+/// splitting into one per column. Tap a choice, or press and slide down and
+/// let go on one; it folds back up shortly after a pick, or when you tap
+/// anywhere else.
+class FilterPill extends StatefulWidget {
+  final List<FilterGroup> groups;
+  final bool dark;
+  final double height;
+
+  const FilterPill({
+    super.key,
+    required this.groups,
+    required this.dark,
     this.height = 42,
   });
 
   @override
-  State<DropToggle> createState() => _DropToggleState();
+  State<FilterPill> createState() => _FilterPillState();
 }
 
-class _DropToggleState extends State<DropToggle> with SingleTickerProviderStateMixin {
+class _PillLayout {
+  final double closedWidth;
+  final double openWidth;
+  final double openHeight;
+  final List<double> columnWidths;
+
+  const _PillLayout(this.closedWidth, this.openWidth, this.openHeight, this.columnWidths);
+}
+
+class _FilterPillState extends State<FilterPill> with SingleTickerProviderStateMixin {
   static const _pad = 3.0;
+  static const _gap = 4.0;
+  static const _labelStyle = TextStyle(fontSize: 13, fontWeight: FontWeight.w700);
+
+  /// The app's text style with the label size. Set explicitly: the open
+  /// panel lives in the overlay, outside the screen's text styling.
+  TextStyle _style = _labelStyle;
+
+  // Opening overshoots a touch; closing settles without a bounce.
+  static const _openSpring = SpringDescription(mass: 1, stiffness: 420, damping: 32);
+  static const _closeSpring = SpringDescription(mass: 1, stiffness: 520, damping: 46);
 
   final _link = LayerLink();
   final _portal = OverlayPortalController();
-  late final _open = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 280),
-    reverseDuration: const Duration(milliseconds: 220),
-  );
+  late final _open = AnimationController.unbounded(vsync: this);
+  Timer? _autoClose;
+  bool _pressed = false;
 
-  /// The thumb's row while a finger slides it, null otherwise.
-  double? _slide;
+  /// While a finger slides: its column and the highlight's (fractional) row.
+  int? _slideColumn;
+  double? _slideRow;
+  bool _slideFromClosed = false;
 
-  /// A row just picked, shown until the parent passes the new value.
-  int? _picked;
+  /// Rows just picked, shown until the parent passes the new values.
+  final _picked = <int, int>{};
 
   double get _row => widget.height - 2 * _pad;
-  int get _n => widget.options.length;
-  int get _index => widget.options.indexOf(widget.value).clamp(0, _n - 1);
 
   @override
-  void didUpdateWidget(DropToggle old) {
+  void didUpdateWidget(FilterPill old) {
     super.didUpdateWidget(old);
-    if (old.value != widget.value) _picked = null;
+    _picked.clear();
   }
 
   @override
   void dispose() {
+    _autoClose?.cancel();
     _open.dispose();
     super.dispose();
   }
 
-  void _show() {
-    if (!_portal.isShowing) setState(_portal.show);
-    _open.animateTo(1, curve: Curves.easeOutCubic);
-  }
-
-  Future<void> _hide() async {
-    await _open.animateBack(0, curve: Curves.easeInCubic);
-    if (mounted && _open.value == 0 && _portal.isShowing) setState(_portal.hide);
-  }
-
-  int _rowAt(double dy) => ((dy - _pad) / _row).floor().clamp(0, _n - 1);
-
-  void _slideTo(double dy) {
-    final at = ((dy - _pad - _row / 2) / _row).clamp(0.0, _n - 1.0);
-    final before = _slide?.round();
-    if (before != null && before != at.round()) HapticFeedback.selectionClick();
-    setState(() => _slide = at);
-  }
-
-  void _startSlide(double dy) {
-    HapticFeedback.lightImpact();
-    _show();
-    _slideTo(dy);
-  }
-
-  void _endSlide() {
-    final at = _slide;
-    if (at == null) return;
-    setState(() => _slide = null);
-    _pick(at.round());
-  }
-
-  void _pick(int i) {
-    if (i != _index) {
-      HapticFeedback.selectionClick();
-      setState(() => _picked = i);
-      widget.onChanged(widget.options[i]);
+  _PillLayout _layout(BuildContext context) {
+    _style = (Theme.of(context).textTheme.bodyMedium ?? const TextStyle()).merge(_labelStyle);
+    final scaler = MediaQuery.textScalerOf(context).clamp(maxScaleFactor: 1.3);
+    double width(String text) => (TextPainter(
+          text: TextSpan(text: text, style: _style),
+          textDirection: TextDirection.ltr,
+          textScaler: scaler,
+        )..layout())
+            .width;
+    final widest = [
+      for (final g in widget.groups) g.options.map(width).fold(0.0, math.max),
+    ];
+    final columns = [for (final w in widest) w + 28];
+    final summary = widest.fold(0.0, (a, b) => a + b) +
+        width(' · ') * (widget.groups.length - 1);
+    final closed = 2 * _pad + 24 + summary + 18;
+    var open = 2 * _pad + columns.fold(0.0, (a, b) => a + b) + _gap * (columns.length - 1);
+    if (open < closed) {
+      final extra = (closed - open) / columns.length;
+      for (var i = 0; i < columns.length; i++) {
+        columns[i] += extra;
+      }
+      open = closed;
     }
-    // Let the thumb reach the row before folding up.
-    Future.delayed(const Duration(milliseconds: 140), () {
-      if (mounted) _hide();
+    final rows = widget.groups.map((g) => g.options.length).fold(1, math.max);
+    return _PillLayout(closed, open, 2 * _pad + _row * rows, columns);
+  }
+
+  int _selected(int column) {
+    final g = widget.groups[column];
+    return _picked[column] ?? g.options.indexOf(g.value).clamp(0, g.options.length - 1);
+  }
+
+  void _show() {
+    _autoClose?.cancel();
+    if (!_portal.isShowing) setState(_portal.show);
+    _open.animateWith(SpringSimulation(_openSpring, _open.value, 1, 0));
+  }
+
+  void _hide() {
+    _autoClose?.cancel();
+    _open.animateWith(SpringSimulation(_closeSpring, _open.value, 0, 0)).then((_) {
+      if (!mounted || _open.value > 0.02) return;
+      _open.value = 0;
+      if (_portal.isShowing) setState(_portal.hide);
     });
   }
 
-  /// The control at openness [t]: 0 shows only the current choice, 1 all.
-  Widget _body(double t) {
+  /// The column under [dx], measured across the open layout.
+  int _columnAt(double dx, _PillLayout l) {
+    var x = _pad;
+    for (var c = 0; c < l.columnWidths.length; c++) {
+      x += l.columnWidths[c] + _gap;
+      if (dx < x - _gap / 2) return c;
+    }
+    return l.columnWidths.length - 1;
+  }
+
+  double _rowAt(int column, double dy) {
+    final last = widget.groups[column].options.length - 1.0;
+    return ((dy - _pad - _row / 2) / _row).clamp(0.0, last);
+  }
+
+  void _startSlide(double dx, double dy, _PillLayout l, {required bool fromClosed}) {
+    HapticFeedback.lightImpact();
+    _autoClose?.cancel();
+    _slideFromClosed = fromClosed;
+    final column = _columnAt(dx, l);
+    setState(() {
+      _slideColumn = column;
+      _slideRow = _rowAt(column, dy);
+    });
+    _show();
+  }
+
+  void _slideTo(double dy) {
+    final column = _slideColumn;
+    if (column == null) return;
+    final at = _rowAt(column, dy);
+    if (_slideRow != null && _slideRow!.round() != at.round()) {
+      HapticFeedback.selectionClick();
+    }
+    setState(() => _slideRow = at);
+  }
+
+  /// The row a column's highlight is on: under the finger, or the choice.
+  double _thumbRow(int column) =>
+      _slideColumn == column ? (_slideRow ?? _selected(column).toDouble()) : _selected(column).toDouble();
+
+  void _endSlide() {
+    final column = _slideColumn;
+    final at = _slideRow;
+    setState(() {
+      _slideColumn = null;
+      _slideRow = null;
+    });
+    if (column != null && at != null) _pick(column, at.round());
+  }
+
+  void _pick(int column, int row) {
+    final g = widget.groups[column];
+    if (row != _selected(column)) {
+      HapticFeedback.selectionClick();
+      setState(() => _picked[column] = row);
+      g.onChanged(g.options[row]);
+    }
+    // Fold up once the highlight has settled, unless another choice comes.
+    _autoClose?.cancel();
+    _autoClose = Timer(Duration(milliseconds: _slideFromClosed ? 260 : 700), _hide);
+    _slideFromClosed = false;
+  }
+
+  /// The pill at openness [t]: 0 closed, 1 open (a spring, so a little past
+  /// 1 while it settles). [width] grows leftward from the right edge.
+  Widget _body(double t, _PillLayout l) {
     final dark = widget.dark;
-    final selected = _picked ?? _index;
-    final thumb = _slide ?? selected.toDouble();
-    final hover = _slide?.round() ?? selected;
-    final row = _row;
+    final shown = t.clamp(0.0, 1.0);
+    final w = l.closedWidth + (l.openWidth - l.closedWidth) * t;
+    final h = widget.height + (l.openHeight - widget.height) * t;
+    final left = w - l.openWidth; // the open layout's left edge, right-aligned
+    final closedThumb = Rect.fromLTWH(w - l.closedWidth + _pad, _pad, l.closedWidth - 2 * _pad, _row);
+
+    Rect cell(int column, double row) {
+      var x = left + _pad;
+      for (var c = 0; c < column; c++) {
+        x += l.columnWidths[c] + _gap;
+      }
+      return Rect.fromLTWH(x, _pad + _row * row, l.columnWidths[column], _row);
+    }
+
+    final summary = [
+      for (var c = 0; c < widget.groups.length; c++) widget.groups[c].options[_selected(c)],
+    ].join(' · ');
+
     return Container(
-      width: widget.width,
-      height: widget.height + (_n - 1) * row * t,
+      width: w,
+      height: h,
       decoration: BoxDecoration(
         color: C.surface2(dark),
-        borderRadius: BorderRadius.circular(widget.height / 2),
+        borderRadius: BorderRadius.circular(widget.height / 2 - 3 * shown),
         boxShadow: [
-          if (t > 0)
+          if (shown > 0)
             BoxShadow(
-              color: Colors.black.withValues(alpha: (dark ? 0.5 : 0.16) * t),
-              blurRadius: 24,
-              offset: const Offset(0, 10),
+              color: Colors.black.withValues(alpha: (dark ? 0.5 : 0.16) * shown),
+              blurRadius: 28,
+              offset: Offset(0, 12 * shown),
             ),
         ],
       ),
-      child: Stack(
-        children: [
-          TweenAnimationBuilder<double>(
-            tween: Tween(end: thumb),
-            duration: _slide != null ? Duration.zero : const Duration(milliseconds: 240),
-            curve: Curves.easeOutBack,
-            builder: (context, at, _) => Positioned(
-              left: _pad,
-              right: _pad,
-              top: _pad + row * at * t,
-              height: row,
-              child: AnimatedScale(
-                scale: _slide != null ? 1.08 : 1,
-                duration: const Duration(milliseconds: 200),
-                curve: kSpring,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: C.accentOf(dark),
-                    borderRadius: BorderRadius.circular(row / 2),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(widget.height / 2 - 3 * shown),
+        child: Stack(
+          children: [
+            // One highlight per column. Closed they sit on top of each other
+            // as one; opening splits them apart to their rows.
+            for (var c = 0; c < widget.groups.length; c++)
+              TweenAnimationBuilder<double>(
+                tween: Tween(end: _thumbRow(c)),
+                duration: _slideColumn == c ? Duration.zero : const Duration(milliseconds: 420),
+                curve: kFluid,
+                builder: (context, row, _) => Positioned.fromRect(
+                  rect: Rect.lerp(closedThumb, cell(c, row), t)!,
+                  child: AnimatedScale(
+                    scale: _slideColumn == c ? 1.06 : 1,
+                    duration: const Duration(milliseconds: 220),
+                    curve: kFluid,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: C.accentOf(dark),
+                        borderRadius: BorderRadius.circular(_row / 2),
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ),
-          for (var i = 0; i < _n; i++)
-            if (t > 0 || i == selected)
-              Positioned(
-                left: _pad,
-                right: _pad,
-                top: _pad + row * i * t,
-                height: row,
+            // The summary fades out as the pill opens.
+            if (shown < 0.4)
+              Positioned.fromRect(
+                rect: closedThumb,
                 child: Opacity(
-                  opacity: i == selected ? 1 : t,
+                  opacity: (1 - shown * 2.5).clamp(0.0, 1.0),
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        AnimatedDefaultTextStyle(
-                          duration: const Duration(milliseconds: 150),
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: i == hover ? Colors.white : C.text2(dark),
-                          ),
-                          child: Text(widget.options[i]),
-                        ),
-                        // The fold-down hint, only while closed.
-                        if (i == selected && t < 1)
-                          ClipRect(
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              widthFactor: 1 - t,
-                              child: Opacity(
-                                opacity: 1 - t,
-                                child: const Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: Colors.white),
-                              ),
-                            ),
-                          ),
+                        Text(summary, style: _style.copyWith(color: Colors.white)),
+                        const SizedBox(width: 2),
+                        const Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: Colors.white),
                       ],
                     ),
                   ),
                 ),
               ),
-        ],
+            // The choices fade in a row at a time.
+            if (shown > 0.3)
+              for (var c = 0; c < widget.groups.length; c++)
+                for (var r = 0; r < widget.groups[c].options.length; r++)
+                  Positioned.fromRect(
+                    rect: cell(c, r.toDouble()),
+                    child: Builder(builder: (context) {
+                      final o = ((shown - 0.35 - 0.08 * r) / 0.4).clamp(0.0, 1.0);
+                      final on = _thumbRow(c).round() == r;
+                      return Opacity(
+                        opacity: o,
+                        child: Transform.translate(
+                          offset: Offset(0, (1 - o) * -6),
+                          child: Center(
+                            child: AnimatedDefaultTextStyle(
+                              duration: const Duration(milliseconds: 160),
+                              style: _style.copyWith(color: on ? Colors.white : C.text2(dark)),
+                              child: Text(widget.groups[c].options[r]),
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                  ),
+          ],
+        ),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final l = _layout(context);
     return CompositedTransformTarget(
       link: _link,
       child: OverlayPortal(
@@ -1145,30 +1285,43 @@ class _DropToggleState extends State<DropToggle> with SingleTickerProviderStateM
         overlayChildBuilder: (context) => Stack(
           children: [
             Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: _hide,
-              ),
+              child: GestureDetector(behavior: HitTestBehavior.opaque, onTap: _hide),
             ),
             CompositedTransformFollower(
               link: _link,
               showWhenUnlinked: false,
-              child: Align(
-                alignment: Alignment.topLeft,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTapUp: (d) => _pick(_rowAt(d.localPosition.dy)),
-                  onVerticalDragStart: (d) => _startSlide(d.localPosition.dy),
-                  onVerticalDragUpdate: (d) => _slideTo(d.localPosition.dy),
-                  onVerticalDragEnd: (_) => _endSlide(),
-                  onLongPressStart: (d) => _startSlide(d.localPosition.dy),
-                  onLongPressMoveUpdate: (d) => _slideTo(d.localPosition.dy),
-                  onLongPressEnd: (_) => _endSlide(),
-                  child: AnimatedBuilder(
-                    animation: _open,
-                    builder: (context, _) => _body(_open.value),
-                  ),
-                ),
+              targetAnchor: Alignment.topRight,
+              followerAnchor: Alignment.topRight,
+              child: AnimatedBuilder(
+                animation: _open,
+                builder: (context, _) {
+                  final w = l.closedWidth + (l.openWidth - l.closedWidth) * _open.value;
+                  // Positions as if the panel were fully open.
+                  Offset open(Offset p) => Offset(p.dx - (w - l.openWidth), p.dy);
+                  return GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTapDown: (_) => _autoClose?.cancel(),
+                    onTapUp: (d) {
+                      final p = open(d.localPosition);
+                      final c = _columnAt(p.dx, l);
+                      final rows = widget.groups[c].options.length;
+                      _pick(c, ((p.dy - _pad) / _row).floor().clamp(0, rows - 1));
+                    },
+                    onVerticalDragStart: (d) {
+                      final p = open(d.localPosition);
+                      _startSlide(p.dx, p.dy, l, fromClosed: false);
+                    },
+                    onVerticalDragUpdate: (d) => _slideTo(d.localPosition.dy),
+                    onVerticalDragEnd: (_) => _endSlide(),
+                    onLongPressStart: (d) {
+                      final p = open(d.localPosition);
+                      _startSlide(p.dx, p.dy, l, fromClosed: false);
+                    },
+                    onLongPressMoveUpdate: (d) => _slideTo(d.localPosition.dy),
+                    onLongPressEnd: (_) => _endSlide(),
+                    child: _body(_open.value, l),
+                  );
+                },
               ),
             ),
           ],
@@ -1176,21 +1329,30 @@ class _DropToggleState extends State<DropToggle> with SingleTickerProviderStateM
         // While open, the copy in the overlay stands in for this one.
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: () {
+          onTapDown: (_) => setState(() => _pressed = true),
+          onTapCancel: () => setState(() => _pressed = false),
+          onTapUp: (_) {
+            setState(() => _pressed = false);
             HapticFeedback.selectionClick();
             _show();
           },
-          onVerticalDragStart: (d) => _startSlide(d.localPosition.dy),
+          onVerticalDragStart: (d) => _startSlide(
+              d.localPosition.dx + l.openWidth - l.closedWidth, d.localPosition.dy, l,
+              fromClosed: true),
           onVerticalDragUpdate: (d) => _slideTo(d.localPosition.dy),
           onVerticalDragEnd: (_) => _endSlide(),
-          onLongPressStart: (d) => _startSlide(d.localPosition.dy),
+          onLongPressStart: (d) => _startSlide(
+              d.localPosition.dx + l.openWidth - l.closedWidth, d.localPosition.dy, l,
+              fromClosed: true),
           onLongPressMoveUpdate: (d) => _slideTo(d.localPosition.dy),
           onLongPressEnd: (_) => _endSlide(),
-          child: AnimatedBuilder(
-            animation: _open,
-            builder: (context, _) => Opacity(
-              opacity: _open.value == 0 && !_portal.isShowing ? 1 : 0,
-              child: SizedBox(width: widget.width, height: widget.height, child: _body(0)),
+          child: AnimatedScale(
+            scale: _pressed ? 0.95 : 1,
+            duration: const Duration(milliseconds: 180),
+            curve: kFluid,
+            child: Opacity(
+              opacity: _portal.isShowing ? 0 : 1,
+              child: SizedBox(width: l.closedWidth, height: widget.height, child: _body(0, l)),
             ),
           ),
         ),

@@ -55,15 +55,16 @@ void main() {
     await tester.pumpAndSettle();
 
     // The latest results are outdoor; the 60m is indoor only.
-    final season = find.byKey(const ValueKey('season'));
-    expect(find.descendant(of: season, matching: find.text('Outdoor')), findsOneWidget);
+    final filters = find.byKey(const ValueKey('filters'));
+    expect(find.descendant(of: filters, matching: find.text('Outdoor · All')), findsOneWidget);
     expect(find.text('Marcus Smith'), findsNothing);
 
-    await tester.tap(season);
+    await tester.tap(filters);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Indoor'));
+    await tester.pump(const Duration(seconds: 1));
     await tester.pumpAndSettle();
-    expect(find.descendant(of: season, matching: find.text('Indoor')), findsOneWidget);
+    expect(find.descendant(of: filters, matching: find.text('Indoor · All')), findsOneWidget);
     expect(find.text('Marcus Smith'), findsWidgets);
   });
 
