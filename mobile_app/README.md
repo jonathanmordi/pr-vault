@@ -1,17 +1,28 @@
-# mobile_app
+# PR Vault app
 
-A new Flutter project.
+The Flutter app (iOS and Android). See the [main README](../README.md) for
+what it does and how the pieces fit together.
 
-## Getting Started
+## Running
 
-This project is a starting point for a Flutter application.
+```bash
+flutter pub get
+flutter run          # needs lib/app_config.dart, see the main README
+flutter test
+flutter analyze
+```
 
-A few resources to get you started if this is your first Flutter project:
+## Where things are
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+- `lib/main.dart`: startup, the auth gate and the tab bar.
+- `lib/onboarding.dart`: joining a team by school email (or invite code)
+  and claiming your TFRRS profile; then `lib/intro.dart`, shown once.
+- `lib/team_data.dart`: one load of the team's PRs and results shared by
+  every screen, with `lib/team_cache*.dart` saving a copy on the phone.
+- `lib/pr_stats.dart` and `lib/insights.dart`: the pure-Dart logic (seasons,
+  PR detection, trends, rivals, ranks, insights), unit tested without a
+  backend.
+- `lib/design_system.dart`: colors, shared components and animations.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Widget tests use a fake team (`test/support/sample_team.dart`) and serve
+Supabase responses with `MockClient`, so they run offline.
