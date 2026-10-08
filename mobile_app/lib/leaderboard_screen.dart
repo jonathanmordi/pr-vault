@@ -419,23 +419,23 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                if ((_snap?.seasons.length ?? 0) > 1) ...[
-                  DropToggle(
-                    key: const ValueKey('season'),
-                    options: [for (final s in _snap!.seasons) seasonLabel(s)],
-                    value: seasonLabel(_seasonNow),
-                    dark: dark,
-                    width: 96,
-                    onChanged: _setSeason,
-                  ),
-                  const SizedBox(width: 8),
-                ],
-                DropToggle(
-                  key: const ValueKey('gender'),
-                  options: const ['All', 'M', 'F'],
-                  value: _gender,
+                // Season and gender in one pill: "Outdoor · All".
+                FilterPill(
+                  key: const ValueKey('filters'),
                   dark: dark,
-                  onChanged: (g) => setState(() => _gender = g),
+                  groups: [
+                    if ((_snap?.seasons.length ?? 0) > 1)
+                      FilterGroup(
+                        options: [for (final s in _snap!.seasons) seasonLabel(s)],
+                        value: seasonLabel(_seasonNow),
+                        onChanged: _setSeason,
+                      ),
+                    FilterGroup(
+                      options: const ['All', 'M', 'F'],
+                      value: _gender,
+                      onChanged: (g) => setState(() => _gender = g),
+                    ),
+                  ],
                 ),
               ],
             ),
