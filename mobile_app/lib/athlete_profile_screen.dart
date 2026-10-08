@@ -90,7 +90,10 @@ Future<void> showAthleteSheet(
   // Modal sheets don't see the status bar inset, and callers inside a
   // SafeArea have it zeroed out, so read it off the screen itself.
   final view = View.of(context);
-  final insets = EdgeInsets.fromViewPadding(view.padding, view.devicePixelRatio);
+  final insets = EdgeInsets.fromViewPadding(
+    view.padding,
+    view.devicePixelRatio,
+  );
   return showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -166,7 +169,8 @@ class _AthleteSheetState extends State<_AthleteSheet> {
     }
   }
 
-  void _syncDepth() => sheetDepth.value = _progress.value * (_route?.value ?? 1);
+  void _syncDepth() =>
+      sheetDepth.value = _progress.value * (_route?.value ?? 1);
 
   @override
   void dispose() {
@@ -180,7 +184,11 @@ class _AthleteSheetState extends State<_AthleteSheet> {
 
   void _expand() {
     HapticFeedback.selectionClick();
-    _controller.animateTo(_max, duration: const Duration(milliseconds: 420), curve: kSpring);
+    _controller.animateTo(
+      _max,
+      duration: const Duration(milliseconds: 420),
+      curve: kSpring,
+    );
   }
 
   @override
@@ -194,7 +202,8 @@ class _AthleteSheetState extends State<_AthleteSheet> {
 
     // Tall enough for the header card, the focus row (or stats) and the
     // swipe-up hint, clear of the home indicator; taller with bigger text.
-    final textGrowth = (MediaQuery.textScalerOf(context).scale(14) / 14 - 1).clamp(0.0, 1.0);
+    final textGrowth = (MediaQuery.textScalerOf(context).scale(14) / 14 - 1)
+        .clamp(0.0, 1.0);
     final bottomRoom = math.max(16.0, widget.safeBottom - 4);
     final peekPx = 306 + textGrowth * 90 + _cardMargin + bottomRoom;
     final peek = (peekPx / screenH).clamp(0.25, _max - 0.05);
@@ -271,22 +280,28 @@ class _CardShape extends CustomClipper<Path> {
   final double topRadius;
   final double bottomRadius;
 
-  const _CardShape({required this.margin, required this.topRadius, required this.bottomRadius});
+  const _CardShape({
+    required this.margin,
+    required this.topRadius,
+    required this.bottomRadius,
+  });
 
   RRect rrect(Size size) => RRect.fromRectAndCorners(
-        Rect.fromLTRB(margin, 0, size.width - margin, size.height - margin),
-        topLeft: Radius.circular(topRadius),
-        topRight: Radius.circular(topRadius),
-        bottomLeft: Radius.circular(bottomRadius),
-        bottomRight: Radius.circular(bottomRadius),
-      );
+    Rect.fromLTRB(margin, 0, size.width - margin, size.height - margin),
+    topLeft: Radius.circular(topRadius),
+    topRight: Radius.circular(topRadius),
+    bottomLeft: Radius.circular(bottomRadius),
+    bottomRight: Radius.circular(bottomRadius),
+  );
 
   @override
   Path getClip(Size size) => Path()..addRRect(rrect(size));
 
   @override
   bool shouldReclip(_CardShape old) =>
-      old.margin != margin || old.topRadius != topRadius || old.bottomRadius != bottomRadius;
+      old.margin != margin ||
+      old.topRadius != topRadius ||
+      old.bottomRadius != bottomRadius;
 }
 
 /// Hairline around the card so its edge shows against the dimmed screen.
@@ -359,9 +374,12 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
   Future<void> _load() async {
     // Team data (for rivals and points) is usually cached already; it never
     // holds up the rest of the profile.
-    TeamData.instance.load().then((team) {
-      if (mounted) setState(() => _team = team);
-    }).catchError((_) {});
+    TeamData.instance
+        .load()
+        .then((team) {
+          if (mounted) setState(() => _team = team);
+        })
+        .catchError((_) {});
 
     // Ranks are optional: before the list_ranks migration is applied this
     // query fails, and the profile should still load. Before the cut columns
@@ -370,7 +388,8 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
         .from('list_ranks')
         .select(columns)
         .eq('athlete_id', widget.athleteId);
-    const rankColumns = 'event, scope, label, season, season_year, rank, list_size';
+    const rankColumns =
+        'event, scope, label, season, season_year, rank, list_size';
     final ranksFuture = ranks('$rankColumns, mark_display, cut_rank, cut_mark')
         .catchError((_) => ranks(rankColumns))
         .catchError((_) => const <Map<String, dynamic>>[]);
@@ -453,7 +472,9 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
     if (team.isCurrent(widget.athleteId)) {
       return classYearLabel(team.classYearOf(widget.athleteId));
     }
-    final dates = _appearances.map((a) => parseMeetDate(a['meet_date'])).whereType<DateTime>();
+    final dates = _appearances
+        .map((a) => parseMeetDate(a['meet_date']))
+        .whereType<DateTime>();
     if (dates.isEmpty) return 'Alum';
     final last = dates.reduce((a, b) => a.isAfter(b) ? a : b);
     final year = (academicYearOf(last) + 1) % 100;
@@ -461,9 +482,9 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
   }
 
   double get _bestImprovement => _prs.fold(0.0, (m, pr) {
-        final d = (pr['improvement_delta_pct'] as num? ?? 0.0).toDouble();
-        return d > m ? d : m;
-      });
+    final d = (pr['improvement_delta_pct'] as num? ?? 0.0).toDouble();
+    return d > m ? d : m;
+  });
 
   List<ChartPoint> _chartPointsForEvent(String event) {
     final data = _appearances
@@ -479,12 +500,14 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
           ? (a['mark_meters'] as num?)?.toDouble()
           : (a['time_seconds'] as num?)?.toDouble();
       if (v != null && v > 0) {
-        points.add(ChartPoint(
-          value: v,
-          display: prefs.mark(event, a['display_value'], a['mark_meters']),
-          meetName: a['meet_name'] ?? 'Unknown',
-          date: a['meet_date'] ?? '',
-        ));
+        points.add(
+          ChartPoint(
+            value: v,
+            display: prefs.mark(event, a['display_value'], a['mark_meters']),
+            meetName: a['meet_name'] ?? 'Unknown',
+            date: a['meet_date'] ?? '',
+          ),
+        );
       }
     }
     return points;
@@ -502,8 +525,9 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
       } catch (_) {}
     }
 
-    final match = _records.where((r) =>
-        r['event'] == event && r['season'] == season).toList();
+    final match = _records
+        .where((r) => r['event'] == event && r['season'] == season)
+        .toList();
 
     if (match.isNotEmpty) return match.first;
 
@@ -525,7 +549,8 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
       return '${prefs.gap(event, gap)} from record (${prefs.mark(event, record['record_display'], recMark)}, ${record['holder_name']} \'${(record['year_set'] ?? 0) % 100})';
     } else {
       final prTime = (pr['best_time_seconds'] as num?)?.toDouble() ?? 0;
-      final recTime = (record['record_mark_seconds'] as num?)?.toDouble() ?? 9999;
+      final recTime =
+          (record['record_mark_seconds'] as num?)?.toDouble() ?? 9999;
       if (prTime <= 0 || recTime >= 9999) return '';
       final gap = prTime - recTime;
       if (gap <= 0) return '🏆 NEW SCHOOL RECORD';
@@ -538,7 +563,10 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
     }
   }
 
-  double _recordPercentage(Map<String, dynamic> pr, Map<String, dynamic> record) {
+  double _recordPercentage(
+    Map<String, dynamic> pr,
+    Map<String, dynamic> record,
+  ) {
     final isField = isFieldEvent(pr['event']);
     if (isField) {
       final prMark = (pr['best_mark_meters'] as num?)?.toDouble() ?? 0;
@@ -566,366 +594,438 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
       // The header renders straight away from what the caller passed in;
       // only the sections below it wait on the network.
       body: CustomScrollView(
-              controller: sheet?.scrollController,
-              slivers: [
-                if (sheet != null)
-                  _sheetBar(dark, name, sheet)
-                else
-                SliverAppBar(
-                  backgroundColor: C.bg(dark),
-                  elevation: 0,
-                  pinned: true,
-                  leading: widget.showBackButton
-                      ? GestureDetector(
-                          onTap: () => Navigator.pop(context),
-                          child: Center(
-                            child: Container(
-                              width: 32,
-                              height: 32,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: C.surface2(dark),
-                              ),
-                              child: Icon(Icons.arrow_back, size: 16, color: C.text2(dark)),
-                            ),
+        controller: sheet?.scrollController,
+        slivers: [
+          if (sheet != null)
+            _sheetBar(dark, name, sheet)
+          else
+            SliverAppBar(
+              backgroundColor: C.bg(dark),
+              elevation: 0,
+              pinned: true,
+              leading: widget.showBackButton
+                  ? GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Center(
+                        child: Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: C.surface2(dark),
                           ),
-                        )
-                      : const SizedBox(width: 0),
-                  automaticallyImplyLeading: false,
-                  title: Text(
-                    name,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: C.text1(dark),
-                    ),
-                  ),
-                  centerTitle: true,
+                          child: Icon(
+                            Icons.arrow_back,
+                            size: 16,
+                            color: C.text2(dark),
+                          ),
+                        ),
+                      ),
+                    )
+                  : const SizedBox(width: 0),
+              automaticallyImplyLeading: false,
+              title: Text(
+                name,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: C.text1(dark),
                 ),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 8),
+              ),
+              centerTitle: true,
+            ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 8),
 
-                        // Header card
-                        FadeSlideIn(
-                          delay: const Duration(milliseconds: 0),
-                          child: GlassCard(
-                            forceDark: dark,
-                            padding: const EdgeInsets.all(24),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 72,
-                                  height: 72,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    gradient: LinearGradient(
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                      colors: isFemale
-                                          ? const [Color(0xFFD4537E), Color(0xFFED93B1)]
-                                          : [C.accentOf(dark), C.accentAlt],
-                                    ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: isFemale
-                                            ? const Color(0x59D4537E)
-                                            : const Color(0x59E8372D),
-                                        blurRadius: 20,
-                                        offset: const Offset(0, 4),
-                                      )
-                                    ],
-                                  ),
-                                  alignment: Alignment.center,
-                                  child: Text(
-                                    _initials(widget.athleteName),
-                                    style: const TextStyle(
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.w800,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        name,
-                                        style: TextStyle(
-                                          fontSize: 22,
-                                          fontWeight: FontWeight.w700,
-                                          letterSpacing: -0.5,
-                                          color: C.text1(dark),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Wrap(
-                                        spacing: 8,
-                                        children: [
-                                          if (!_loading)
-                                            _pill('${_prs.length} PRs', C.accentSoft(dark), C.accentOf(dark)),
-                                          _pill(isFemale ? 'Women' : 'Men', C.surface2(dark), C.text2(dark)),
-                                          if (_standing case final standing?)
-                                            _pill(standing, C.surface2(dark), C.text2(dark)),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
+                  // Header card
+                  FadeSlideIn(
+                    delay: const Duration(milliseconds: 0),
+                    child: GlassCard(
+                      forceDark: dark,
+                      padding: const EdgeInsets.all(24),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 72,
+                            height: 72,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: isFemale
+                                    ? const [
+                                        Color(0xFFD4537E),
+                                        Color(0xFFED93B1),
+                                      ]
+                                    : [C.accentOf(dark), C.accentAlt],
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: isFemale
+                                      ? const Color(0x59D4537E)
+                                      : const Color(0x59E8372D),
+                                  blurRadius: 20,
+                                  offset: const Offset(0, 4),
                                 ),
                               ],
                             ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              _initials(widget.athleteName),
+                              style: const TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                              ),
+                            ),
                           ),
-                        ),
-                        SizedBox(height: sheet != null ? 12 : 16),
-
-                        if (sheet != null) ...[
-                          if (focus != null)
-                            _focusRow(dark, focus)
-                          else if (_error == null)
-                            _statsRow(dark),
-                          _sheetHint(dark, sheet),
-                        ],
-
-                        if (_loading)
-                          _buildSkeleton(stats: sheet == null || focus != null)
-                        else if (_error != null)
-                          _buildError(dark)
-                        else ...[
-                        // Stats row (in a sheet without a focus result it's
-                        // already in the peek above)
-                        if (sheet == null || focus != null) ...[
-                          _statsRow(dark),
-                          const SizedBox(height: 28),
-                        ],
-
-                        // Trend chart
-                        if (_prs.isNotEmpty) ...[
-                          FadeSlideIn(
-                            delay: const Duration(milliseconds: 120),
+                          const SizedBox(width: 16),
+                          Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'PROGRESSION',
+                                  name,
                                   style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: C.text3(dark),
-                                    letterSpacing: 0.06 * 13,
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: -0.5,
+                                    color: C.text1(dark),
                                   ),
                                 ),
-                                const SizedBox(height: 12),
-                                SizedBox(
-                                  height: 36,
-                                  child: ListView(
-                                    scrollDirection: Axis.horizontal,
-                                    children: _prs.map((pr) {
-                                      final event = pr['event'] as String;
-                                      final sel = event == _selectedEvent;
-                                      return Padding(
-                                        padding: const EdgeInsets.only(right: 8),
-                                        child: GestureDetector(
-                                          onTap: () {
-                                            if (sel) return;
-                                            HapticFeedback.selectionClick();
-                                            setState(() => _selectedEvent = event);
-                                          },
-                                          child: AnimatedContainer(
-                                            duration: const Duration(milliseconds: 200),
-                                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                                            decoration: BoxDecoration(
-                                              color: sel ? C.accentOf(dark) : C.surface2(dark),
-                                              borderRadius: BorderRadius.circular(100),
-                                            ),
-                                            child: Text(
-                                              event,
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w600,
-                                                color: sel ? Colors.white : C.text2(dark),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      );
-                                    }).toList(),
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-                                if (_selectedEvent != null)
-                                  GlassCard(
-                                    forceDark: dark,
-                                    padding: const EdgeInsets.all(20),
-                                    // Cross-fade and resize when switching
-                                    // events instead of jumping.
-                                    child: AnimatedSize(
-                                      duration: const Duration(milliseconds: 250),
-                                      curve: kSpring,
-                                      alignment: Alignment.topCenter,
-                                      child: AnimatedSwitcher(
-                                        duration: const Duration(milliseconds: 220),
-                                        layoutBuilder: (current, previous) => Stack(
-                                          alignment: Alignment.topCenter,
-                                          children: [...previous, ?current],
-                                        ),
-                                        child: InteractiveTrendChart(
-                                          key: ValueKey(_selectedEvent),
-                                          points: _chartPointsForEvent(_selectedEvent!),
-                                          isField: isFieldEvent(_selectedEvent!),
-                                          dark: dark,
-                                        ),
+                                const SizedBox(height: 6),
+                                Wrap(
+                                  spacing: 8,
+                                  children: [
+                                    if (!_loading)
+                                      _pill(
+                                        '${_prs.length} PRs',
+                                        C.accentSoft(dark),
+                                        C.accentOf(dark),
                                       ),
+                                    _pill(
+                                      isFemale ? 'Women' : 'Men',
+                                      C.surface2(dark),
+                                      C.text2(dark),
                                     ),
-                                  ),
+                                    if (_standing case final standing?)
+                                      _pill(
+                                        standing,
+                                        C.surface2(dark),
+                                        C.text2(dark),
+                                      ),
+                                  ],
+                                ),
                               ],
                             ),
                           ),
-                          const SizedBox(height: 28),
                         ],
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: sheet != null ? 12 : 16),
 
-                        // Personal Records
-                        FadeSlideIn(
-                          delay: const Duration(milliseconds: 180),
-                          child: _FoldableSection(
-                            title: 'PERSONAL RECORDS',
-                            dark: dark,
-                            child: GlassCard(
-                              forceDark: dark,
-                              child: Column(
-                                children: _prs.asMap().entries.map((entry) {
-                                  final i = entry.key;
-                                  final pr = entry.value;
-                                  final isLast = i == _prs.length - 1;
-                                  final delta = (pr['improvement_delta_pct'] as num? ?? 0.0);
-                                  final record = _getRecordForPR(pr);
-                                  final gapText = record != null ? _recordGapText(pr, record) : null;
-                                  final pct = record != null ? _recordPercentage(pr, record) : null;
-                                  return _PRRow(pr: pr, isLast: isLast, delta: delta, dark: dark, recordGapText: gapText, recordPct: pct, ranks: _ranks[pr['event']] ?? const []);
+                  if (sheet != null) ...[
+                    if (focus != null)
+                      _focusRow(dark, focus)
+                    else if (_error == null)
+                      _statsRow(dark),
+                    _sheetHint(dark, sheet),
+                  ],
+
+                  if (_loading)
+                    _buildSkeleton(stats: sheet == null || focus != null)
+                  else if (_error != null)
+                    _buildError(dark)
+                  else ...[
+                    // Stats row (in a sheet without a focus result it's
+                    // already in the peek above)
+                    if (sheet == null || focus != null) ...[
+                      _statsRow(dark),
+                      const SizedBox(height: 28),
+                    ],
+
+                    // Trend chart
+                    if (_prs.isNotEmpty) ...[
+                      FadeSlideIn(
+                        delay: const Duration(milliseconds: 120),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'PROGRESSION',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: C.text3(dark),
+                                letterSpacing: 0.06 * 13,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              height: 36,
+                              child: ListView(
+                                scrollDirection: Axis.horizontal,
+                                children: _prs.map((pr) {
+                                  final event = pr['event'] as String;
+                                  final sel = event == _selectedEvent;
+                                  return Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        if (sel) return;
+                                        HapticFeedback.selectionClick();
+                                        setState(() => _selectedEvent = event);
+                                      },
+                                      child: AnimatedContainer(
+                                        duration: const Duration(
+                                          milliseconds: 200,
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 14,
+                                          vertical: 10,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: sel
+                                              ? C.accentOf(dark)
+                                              : C.surface2(dark),
+                                          borderRadius: BorderRadius.circular(
+                                            100,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          event,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: sel
+                                                ? Colors.white
+                                                : C.text2(dark),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  );
                                 }).toList(),
                               ),
                             ),
-                          ),
-                        ),
-                        const SizedBox(height: 28),
-
-                        // Rivals
-                        if (_rivals.isNotEmpty) ...[
-                          FadeSlideIn(
-                            delay: const Duration(milliseconds: 195),
-                            child: _FoldableSection(
-                              title: 'RIVALS',
-                              subtitle: 'Closest teammate PR in each event',
-                              dark: dark,
-                              child: GlassCard(
+                            const SizedBox(height: 16),
+                            if (_selectedEvent != null)
+                              GlassCard(
                                 forceDark: dark,
-                                child: Column(
-                                  children: _rivals.asMap().entries.map((entry) {
-                                    final rival = entry.value;
-                                    return _RivalRow(
-                                      rival: rival,
-                                      name: _team!.nameOf(rival.athleteId),
-                                      gender: _team!.genderOf(rival.athleteId),
-                                      isLast: entry.key == _rivals.length - 1,
+                                padding: const EdgeInsets.all(20),
+                                // Cross-fade and resize when switching
+                                // events instead of jumping.
+                                child: AnimatedSize(
+                                  duration: const Duration(milliseconds: 250),
+                                  curve: kSpring,
+                                  alignment: Alignment.topCenter,
+                                  child: AnimatedSwitcher(
+                                    duration: const Duration(milliseconds: 220),
+                                    layoutBuilder: (current, previous) => Stack(
+                                      alignment: Alignment.topCenter,
+                                      children: [...previous, ?current],
+                                    ),
+                                    child: InteractiveTrendChart(
+                                      key: ValueKey(_selectedEvent),
+                                      points: _chartPointsForEvent(
+                                        _selectedEvent!,
+                                      ),
+                                      isField: isFieldEvent(_selectedEvent!),
                                       dark: dark,
-                                      onTap: () => _openAthlete(rival.athleteId),
-                                    );
-                                  }).toList(),
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
-                          ),
-                          const SizedBox(height: 28),
-                        ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 28),
+                    ],
 
-                        // Lifting Maxes
-                        if (_maxes.isNotEmpty) ...[
-                          FadeSlideIn(
-                            delay: const Duration(milliseconds: 210),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'LIFTING MAXES',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: C.text3(dark),
-                                    letterSpacing: 0.06 * 13,
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                GlassCard(
-                                  forceDark: dark,
-                                  child: Column(
-                                    children: _maxes.asMap().entries.map((entry) {
-                                      final i = entry.key;
-                                      final max = entry.value;
-                                      final isLast = i == _maxes.length - 1;
-                                      return Container(
-                                        padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
-                                        decoration: isLast
-                                            ? null
-                                            : BoxDecoration(
-                                                border: Border(bottom: BorderSide(color: C.border(dark), width: 0.5)),
-                                              ),
-                                        child: Row(
-                                          children: [
-                                            Container(
-                                              width: 40,
-                                              height: 40,
-                                              decoration: BoxDecoration(
-                                                color: C.surface2(dark),
-                                                borderRadius: BorderRadius.circular(10),
-                                              ),
-                                              alignment: Alignment.center,
-                                              child: Icon(Icons.fitness_center, size: 18, color: C.text2(dark)),
-                                            ),
-                                            const SizedBox(width: 12),
-                                            Expanded(
-                                              child: Text(
-                                                max['lift_type'] ?? '',
-                                                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: C.text1(dark)),
-                                              ),
-                                            ),
-                                            Text(
-                                              Prefs.of(context).weight(max['weight_lbs'] as num? ?? 0),
-                                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: C.accentOf(dark), letterSpacing: -0.5),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    }).toList(),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 28),
-                        ],
-
-                        // Meet history
-                        FadeSlideIn(
-                          delay: const Duration(milliseconds: 240),
-                          child: _FoldableSection(
-                            title: 'MEET HISTORY',
-                            dark: dark,
-                            child: _buildMeetHistory(dark),
+                    // Personal Records
+                    FadeSlideIn(
+                      delay: const Duration(milliseconds: 180),
+                      child: _FoldableSection(
+                        title: 'PERSONAL RECORDS',
+                        dark: dark,
+                        child: GlassCard(
+                          forceDark: dark,
+                          child: Column(
+                            children: _prs.asMap().entries.map((entry) {
+                              final i = entry.key;
+                              final pr = entry.value;
+                              final isLast = i == _prs.length - 1;
+                              final delta =
+                                  (pr['improvement_delta_pct'] as num? ?? 0.0);
+                              final record = _getRecordForPR(pr);
+                              final gapText = record != null
+                                  ? _recordGapText(pr, record)
+                                  : null;
+                              final pct = record != null
+                                  ? _recordPercentage(pr, record)
+                                  : null;
+                              return _PRRow(
+                                pr: pr,
+                                isLast: isLast,
+                                delta: delta,
+                                dark: dark,
+                                recordGapText: gapText,
+                                recordPct: pct,
+                                ranks: _ranks[pr['event']] ?? const [],
+                              );
+                            }).toList(),
                           ),
                         ),
-                        ],
-                        const SizedBox(height: 120),
-                      ],
+                      ),
                     ),
-                  ),
-                ),
-              ],
+                    const SizedBox(height: 28),
+
+                    // Rivals
+                    if (_rivals.isNotEmpty) ...[
+                      FadeSlideIn(
+                        delay: const Duration(milliseconds: 195),
+                        child: _FoldableSection(
+                          title: 'RIVALS',
+                          subtitle: 'Closest teammate PR in each event',
+                          dark: dark,
+                          child: GlassCard(
+                            forceDark: dark,
+                            child: Column(
+                              children: _rivals.asMap().entries.map((entry) {
+                                final rival = entry.value;
+                                return _RivalRow(
+                                  rival: rival,
+                                  name: _team!.nameOf(rival.athleteId),
+                                  gender: _team!.genderOf(rival.athleteId),
+                                  isLast: entry.key == _rivals.length - 1,
+                                  dark: dark,
+                                  onTap: () => _openAthlete(rival.athleteId),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 28),
+                    ],
+
+                    // Lifting Maxes
+                    if (_maxes.isNotEmpty) ...[
+                      FadeSlideIn(
+                        delay: const Duration(milliseconds: 210),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'LIFTING MAXES',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: C.text3(dark),
+                                letterSpacing: 0.06 * 13,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            GlassCard(
+                              forceDark: dark,
+                              child: Column(
+                                children: _maxes.asMap().entries.map((entry) {
+                                  final i = entry.key;
+                                  final max = entry.value;
+                                  final isLast = i == _maxes.length - 1;
+                                  return Container(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      18,
+                                      14,
+                                      18,
+                                      14,
+                                    ),
+                                    decoration: isLast
+                                        ? null
+                                        : BoxDecoration(
+                                            border: Border(
+                                              bottom: BorderSide(
+                                                color: C.border(dark),
+                                                width: 0.5,
+                                              ),
+                                            ),
+                                          ),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          width: 40,
+                                          height: 40,
+                                          decoration: BoxDecoration(
+                                            color: C.surface2(dark),
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
+                                          ),
+                                          alignment: Alignment.center,
+                                          child: Icon(
+                                            Icons.fitness_center,
+                                            size: 18,
+                                            color: C.text2(dark),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            max['lift_type'] ?? '',
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w600,
+                                              color: C.text1(dark),
+                                            ),
+                                          ),
+                                        ),
+                                        Text(
+                                          Prefs.of(context).weight(
+                                            max['weight_lbs'] as num? ?? 0,
+                                          ),
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w700,
+                                            color: C.accentOf(dark),
+                                            letterSpacing: -0.5,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 28),
+                    ],
+
+                    // Meet history
+                    FadeSlideIn(
+                      delay: const Duration(milliseconds: 240),
+                      child: _FoldableSection(
+                        title: 'MEET HISTORY',
+                        dark: dark,
+                        child: _buildMeetHistory(dark),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 120),
+                ],
+              ),
             ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -971,7 +1071,11 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
             opacity: ((offset - 90) / 40).clamp(0.0, 1.0),
             child: Text(
               name,
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: C.text1(dark)),
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: C.text1(dark),
+              ),
             ),
           );
         },
@@ -984,7 +1088,10 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
             child: Container(
               width: 30,
               height: 30,
-              decoration: BoxDecoration(shape: BoxShape.circle, color: C.surface2(dark)),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: C.surface2(dark),
+              ),
               child: Icon(Icons.close, size: 15, color: C.text2(dark)),
             ),
           ),
@@ -998,7 +1105,8 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
   Widget _sheetHint(bool dark, ProfileSheet sheet) {
     return ValueListenableBuilder<double>(
       valueListenable: sheet.progress,
-      builder: (_, t, child) => Opacity(opacity: (1 - t * 3).clamp(0.0, 1.0), child: child),
+      builder: (_, t, child) =>
+          Opacity(opacity: (1 - t * 3).clamp(0.0, 1.0), child: child),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: sheet.expand,
@@ -1007,11 +1115,19 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.keyboard_arrow_up_rounded, size: 18, color: C.text3(dark)),
+              Icon(
+                Icons.keyboard_arrow_up_rounded,
+                size: 18,
+                color: C.text3(dark),
+              ),
               const SizedBox(width: 4),
               Text(
                 'Swipe up for full profile',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: C.text3(dark)),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: C.text3(dark),
+                ),
               ),
             ],
           ),
@@ -1033,7 +1149,9 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
           ),
         ),
         const SizedBox(width: 10),
-        Expanded(child: _FocusStat(label: 'Event', value: f.event, dark: dark)),
+        Expanded(
+          child: _FocusStat(label: 'Event', value: f.event, dark: dark),
+        ),
         const SizedBox(width: 10),
         Expanded(
           child: _FocusStat(
@@ -1076,7 +1194,8 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
           Expanded(
             child: _miniStat(
               label: 'Meets',
-              value: '${_appearances.map((a) => a['meet_name']).toSet().length}',
+              value:
+                  '${_appearances.map((a) => a['meet_name']).toSet().length}',
               icon: Icons.calendar_today_outlined,
               dark: dark,
             ),
@@ -1100,23 +1219,20 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
   }
 
   Widget _statsSkeleton() => Row(
-        children: [
-          for (var i = 0; i < 4; i++) ...[
-            if (i > 0) const SizedBox(width: 10),
-            const Expanded(child: SkeletonBox(height: 78, radius: 16)),
-          ],
-        ],
-      );
+    children: [
+      for (var i = 0; i < 4; i++) ...[
+        if (i > 0) const SizedBox(width: 10),
+        const Expanded(child: SkeletonBox(height: 78, radius: 16)),
+      ],
+    ],
+  );
 
   Widget _buildSkeleton({bool stats = true}) {
     return SkeletonPulse(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (stats) ...[
-            _statsSkeleton(),
-            const SizedBox(height: 28),
-          ],
+          if (stats) ...[_statsSkeleton(), const SizedBox(height: 28)],
           const SkeletonBox(width: 110, height: 12),
           const SizedBox(height: 12),
           const SkeletonBox(height: 280, radius: 16),
@@ -1142,14 +1258,21 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
             PressScale(
               onTap: _retry,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   color: C.accentOf(dark),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Text(
                   'Try again',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white),
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
                 ),
               ),
             ),
@@ -1178,7 +1301,10 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
         forceDark: dark,
         padding: const EdgeInsets.all(24),
         child: Center(
-          child: Text('No meet history', style: TextStyle(fontSize: 13, color: C.text3(dark))),
+          child: Text(
+            'No meet history',
+            style: TextStyle(fontSize: 13, color: C.text3(dark)),
+          ),
         ),
       );
     }
@@ -1200,28 +1326,50 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                     Expanded(
                       child: Text(
                         meet,
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: C.text1(dark)),
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: C.text1(dark),
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Text(_formatDateLabel(date), style: TextStyle(fontSize: 12, color: C.text3(dark))),
+                    Text(
+                      _formatDateLabel(date),
+                      style: TextStyle(fontSize: 12, color: C.text3(dark)),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 10),
                 ...results.map((r) {
                   final event = r['event'] ?? '';
-                  final display = Prefs.of(context).mark(event, r['display_value'], r['mark_meters']);
+                  final display = Prefs.of(
+                    context,
+                  ).mark(event, r['display_value'], r['mark_meters']);
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Row(
                       children: [
                         SizedBox(
                           width: 100,
-                          child: Text(event, style: TextStyle(fontSize: 12, color: C.text2(dark))),
+                          child: Text(
+                            event,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: C.text2(dark),
+                            ),
+                          ),
                         ),
-                        Text(display, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: C.text1(dark))),
+                        Text(
+                          display,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: C.text1(dark),
+                          ),
+                        ),
                       ],
                     ),
                   );
@@ -1238,7 +1386,21 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
     if (date.isEmpty) return '';
     try {
       final parts = date.split('-');
-      final months = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      final months = [
+        '',
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec',
+      ];
       return "${months[int.parse(parts[1])]} '${parts[0].substring(2)}";
     } catch (_) {
       return date;
@@ -1248,12 +1410,23 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
   Widget _pill(String text, Color bg, Color fg) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(100)),
-      child: Text(text, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: fg)),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(100),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: fg),
+      ),
     );
   }
 
-  Widget _miniStat({required String label, required String value, required IconData icon, required bool dark}) {
+  Widget _miniStat({
+    required String label,
+    required String value,
+    required IconData icon,
+    required bool dark,
+  }) {
     return GlassCard(
       forceDark: dark,
       padding: const EdgeInsets.all(14),
@@ -1261,7 +1434,15 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
         children: [
           Icon(icon, size: 16, color: C.text3(dark)),
           const SizedBox(height: 6),
-          Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, letterSpacing: -0.5, color: C.text1(dark))),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.5,
+              color: C.text1(dark),
+            ),
+          ),
           const SizedBox(height: 2),
           Text(label, style: TextStyle(fontSize: 11, color: C.text3(dark))),
         ],
@@ -1317,7 +1498,10 @@ class _InteractiveTrendChartState extends State<InteractiveTrendChart> {
       return SizedBox(
         height: 120,
         child: Center(
-          child: Text('Not enough data to chart', style: TextStyle(fontSize: 13, color: C.text3(dark))),
+          child: Text(
+            'Not enough data to chart',
+            style: TextStyle(fontSize: 13, color: C.text3(dark)),
+          ),
         ),
       );
     }
@@ -1335,12 +1519,27 @@ class _InteractiveTrendChartState extends State<InteractiveTrendChart> {
           children: [
             Text(
               prPoint.display,
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: C.accentOf(dark), letterSpacing: -1),
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.w700,
+                color: C.accentOf(dark),
+                letterSpacing: -1,
+              ),
             ),
             const SizedBox(width: 8),
-            Text('PR', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: C.text3(dark))),
+            Text(
+              'PR',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: C.text3(dark),
+              ),
+            ),
             const Spacer(),
-            Text('${points.length} results', style: TextStyle(fontSize: 12, color: C.text3(dark))),
+            Text(
+              '${points.length} results',
+              style: TextStyle(fontSize: 12, color: C.text3(dark)),
+            ),
           ],
         ),
         const SizedBox(height: 20),
@@ -1365,8 +1564,8 @@ class _InteractiveTrendChartState extends State<InteractiveTrendChart> {
                 final norm = range == 0
                     ? 0.5
                     : isField
-                        ? (values[i] - minV) / range
-                        : 1 - (values[i] - minV) / range;
+                    ? (values[i] - minV) / range
+                    : 1 - (values[i] - minV) / range;
                 final y = topPad + chartHeight - norm * chartHeight;
                 positions.add(Offset(x, y));
               }
@@ -1374,13 +1573,18 @@ class _InteractiveTrendChartState extends State<InteractiveTrendChart> {
               // Horizontal drags scrub the chart; vertical ones still
               // scroll the page.
               return GestureDetector(
-                onLongPressStart: (d) => _updateActive(d.localPosition.dx, positions),
-                onLongPressMoveUpdate: (d) => _updateActive(d.localPosition.dx, positions),
+                onLongPressStart: (d) =>
+                    _updateActive(d.localPosition.dx, positions),
+                onLongPressMoveUpdate: (d) =>
+                    _updateActive(d.localPosition.dx, positions),
                 onLongPressEnd: (_) => setState(() => _activeIndex = null),
-                onHorizontalDragStart: (d) => _updateActive(d.localPosition.dx, positions),
-                onHorizontalDragUpdate: (d) => _updateActive(d.localPosition.dx, positions),
+                onHorizontalDragStart: (d) =>
+                    _updateActive(d.localPosition.dx, positions),
+                onHorizontalDragUpdate: (d) =>
+                    _updateActive(d.localPosition.dx, positions),
                 onHorizontalDragEnd: (_) => setState(() => _activeIndex = null),
-                onHorizontalDragCancel: () => setState(() => _activeIndex = null),
+                onHorizontalDragCancel: () =>
+                    setState(() => _activeIndex = null),
                 child: TweenAnimationBuilder<double>(
                   // Draw the line in from left to right on first show.
                   tween: Tween(begin: 0, end: 1),
@@ -1402,7 +1606,12 @@ class _InteractiveTrendChartState extends State<InteractiveTrendChart> {
                         ),
                       ),
                       if (_activeIndex != null && _activeIndex! < points.length)
-                        _buildCallout(positions[_activeIndex!], points[_activeIndex!], chartWidth, dark),
+                        _buildCallout(
+                          positions[_activeIndex!],
+                          points[_activeIndex!],
+                          chartWidth,
+                          dark,
+                        ),
                     ],
                   ),
                 ),
@@ -1414,12 +1623,21 @@ class _InteractiveTrendChartState extends State<InteractiveTrendChart> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(_formatShortDate(points.first.date), style: TextStyle(fontSize: 10, color: C.text3(dark))),
+            Text(
+              _formatShortDate(points.first.date),
+              style: TextStyle(fontSize: 10, color: C.text3(dark)),
+            ),
             Text(
               'Touch and hold to explore',
-              style: TextStyle(fontSize: 10, color: C.text3(dark).withValues(alpha: 0.6)),
+              style: TextStyle(
+                fontSize: 10,
+                color: C.text3(dark).withValues(alpha: 0.6),
+              ),
             ),
-            Text(_formatShortDate(points.last.date), style: TextStyle(fontSize: 10, color: C.text3(dark))),
+            Text(
+              _formatShortDate(points.last.date),
+              style: TextStyle(fontSize: 10, color: C.text3(dark)),
+            ),
           ],
         ),
       ],
@@ -1442,7 +1660,12 @@ class _InteractiveTrendChartState extends State<InteractiveTrendChart> {
     }
   }
 
-  Widget _buildCallout(Offset pos, ChartPoint point, double chartWidth, bool dark) {
+  Widget _buildCallout(
+    Offset pos,
+    ChartPoint point,
+    double chartWidth,
+    bool dark,
+  ) {
     const tooltipW = 136.0;
     const tooltipH = 62.0;
     const tailH = 7.0;
@@ -1482,7 +1705,11 @@ class _InteractiveTrendChartState extends State<InteractiveTrendChart> {
               children: [
                 Text(
                   point.display,
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: C.text1(dark)),
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: C.text1(dark),
+                  ),
                 ),
                 const SizedBox(height: 1),
                 Text(
@@ -1522,7 +1749,21 @@ class _InteractiveTrendChartState extends State<InteractiveTrendChart> {
     if (date.isEmpty) return '';
     try {
       final parts = date.split('-');
-      final months = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      final months = [
+        '',
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec',
+      ];
       return "${months[int.parse(parts[1])]} '${parts[0].substring(2)}";
     } catch (_) {
       return date;
@@ -1533,7 +1774,21 @@ class _InteractiveTrendChartState extends State<InteractiveTrendChart> {
     if (date.isEmpty) return '';
     try {
       final parts = date.split('-');
-      final months = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      final months = [
+        '',
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec',
+      ];
       return '${months[int.parse(parts[1])]} ${int.parse(parts[2])}, ${parts[0]}';
     } catch (_) {
       return date;
@@ -1548,7 +1803,11 @@ class _TailPainter extends CustomPainter {
   final Color fillColor;
   final Color borderColor;
 
-  _TailPainter({required this.tailLeft, required this.fillColor, required this.borderColor});
+  _TailPainter({
+    required this.tailLeft,
+    required this.fillColor,
+    required this.borderColor,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1563,13 +1822,23 @@ class _TailPainter extends CustomPainter {
       ..color = borderColor
       ..strokeWidth = 0.5
       ..style = PaintingStyle.stroke;
-    canvas.drawLine(Offset(tailLeft, 0), Offset(tailLeft + 6, size.height), borderPaint);
-    canvas.drawLine(Offset(tailLeft + 6, size.height), Offset(tailLeft + 12, 0), borderPaint);
+    canvas.drawLine(
+      Offset(tailLeft, 0),
+      Offset(tailLeft + 6, size.height),
+      borderPaint,
+    );
+    canvas.drawLine(
+      Offset(tailLeft + 6, size.height),
+      Offset(tailLeft + 12, 0),
+      borderPaint,
+    );
 
     canvas.drawLine(
       Offset(tailLeft + 0.5, 0),
       Offset(tailLeft + 11.5, 0),
-      Paint()..color = fillColor..strokeWidth = 1.5,
+      Paint()
+        ..color = fillColor
+        ..strokeWidth = 1.5,
     );
   }
 
@@ -1605,8 +1874,9 @@ class _TrendLinePainter extends CustomPainter {
     if (positions.length < 2) return;
 
     // Pad the reveal so dots on the edges aren't clipped once it's done.
-    canvas.clipRect(Rect.fromLTRB(
-        -8, -8, -8 + (size.width + 16) * progress, size.height + 8));
+    canvas.clipRect(
+      Rect.fromLTRB(-8, -8, -8 + (size.width + 16) * progress, size.height + 8),
+    );
 
     final prIdx = values.indexOf(prValue);
     if (prIdx >= 0) {
@@ -1618,7 +1888,11 @@ class _TrendLinePainter extends CustomPainter {
       const ds = 4.0;
       var sx = 0.0;
       while (sx < size.width) {
-        canvas.drawLine(Offset(sx, prY), Offset((sx + dw).clamp(0, size.width), prY), dp);
+        canvas.drawLine(
+          Offset(sx, prY),
+          Offset((sx + dw).clamp(0, size.width), prY),
+          dp,
+        );
         sx += dw + ds;
       }
     }
@@ -1640,7 +1914,10 @@ class _TrendLinePainter extends CustomPainter {
         ..shader = LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [C.accentOf(dark).withValues(alpha: 0.12), C.accentOf(dark).withValues(alpha: 0.0)],
+          colors: [
+            C.accentOf(dark).withValues(alpha: 0.12),
+            C.accentOf(dark).withValues(alpha: 0.0),
+          ],
         ).createShader(Rect.fromLTWH(0, 0, size.width, size.height)),
     );
 
@@ -1671,15 +1948,25 @@ class _TrendLinePainter extends CustomPainter {
           Offset(positions[i].dx, 0),
           Offset(positions[i].dx, size.height),
           Paint()
-            ..color = (dark ? Colors.white : Colors.black).withValues(alpha: 0.12)
+            ..color = (dark ? Colors.white : Colors.black).withValues(
+              alpha: 0.12,
+            )
             ..strokeWidth = 0.5,
         );
       }
 
-      final r = isActive ? 6.0 : isPR ? 5.0 : 3.0;
+      final r = isActive
+          ? 6.0
+          : isPR
+          ? 5.0
+          : 3.0;
       final a = isActive || isPR ? 1.0 : 0.5;
 
-      canvas.drawCircle(positions[i], r, Paint()..color = C.accentOf(dark).withValues(alpha: a));
+      canvas.drawCircle(
+        positions[i],
+        r,
+        Paint()..color = C.accentOf(dark).withValues(alpha: a),
+      );
 
       if (isActive || isPR) {
         canvas.drawCircle(
@@ -1715,20 +2002,30 @@ class _FoldableSection extends StatefulWidget {
   final bool dark;
   final Widget child;
 
-  const _FoldableSection({required this.title, this.subtitle, required this.dark, required this.child});
+  const _FoldableSection({
+    required this.title,
+    this.subtitle,
+    required this.dark,
+    required this.child,
+  });
 
   @override
   State<_FoldableSection> createState() => _FoldableSectionState();
 }
 
-class _FoldableSectionState extends State<_FoldableSection> with SingleTickerProviderStateMixin {
+class _FoldableSectionState extends State<_FoldableSection>
+    with SingleTickerProviderStateMixin {
   bool _open = true;
   late final AnimationController _ctrl = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 280),
     value: 1,
   );
-  late final Animation<double> _reveal = CurvedAnimation(parent: _ctrl, curve: kSpring, reverseCurve: kSpring.flipped);
+  late final Animation<double> _reveal = CurvedAnimation(
+    parent: _ctrl,
+    curve: kSpring,
+    reverseCurve: kSpring.flipped,
+  );
 
   @override
   void dispose() {
@@ -1771,7 +2068,11 @@ class _FoldableSectionState extends State<_FoldableSection> with SingleTickerPro
                     turns: _open ? 0 : -0.25,
                     duration: const Duration(milliseconds: 280),
                     curve: kSpring,
-                    child: Icon(Icons.keyboard_arrow_down_rounded, size: 20, color: C.text3(dark)),
+                    child: Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      size: 20,
+                      color: C.text3(dark),
+                    ),
                   ),
                 ],
               ),
@@ -1809,7 +2110,12 @@ class _FocusStat extends StatelessWidget {
   final bool accent;
   final bool dark;
 
-  const _FocusStat({required this.label, required this.value, this.accent = false, required this.dark});
+  const _FocusStat({
+    required this.label,
+    required this.value,
+    this.accent = false,
+    required this.dark,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1821,7 +2127,12 @@ class _FocusStat extends StatelessWidget {
           children: [
             Text(
               label.toUpperCase(),
-              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w500, letterSpacing: 0.5, color: C.text3(dark)),
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+                letterSpacing: 0.5,
+                color: C.text3(dark),
+              ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
@@ -1890,7 +2201,11 @@ class _RivalRow extends StatelessWidget {
                     formatName(name),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: C.text1(dark)),
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: C.text1(dark),
+                    ),
                   ),
                   Text(
                     '${rival.event} · ${Prefs.of(context).mark(rival.event, rival.theirDisplay, rival.theirValue)}',
@@ -1939,17 +2254,30 @@ class _PRRow extends StatelessWidget {
   /// National then conference rank from the latest ranked season.
   final List<ListRank> ranks;
 
-  const _PRRow({required this.pr, required this.isLast, required this.delta, required this.dark, this.recordGapText, this.recordPct, this.ranks = const []});
+  const _PRRow({
+    required this.pr,
+    required this.isLast,
+    required this.delta,
+    required this.dark,
+    this.recordGapText,
+    this.recordPct,
+    this.ranks = const [],
+  });
 
   @override
   Widget build(BuildContext context) {
-    final isNewRecord = recordGapText != null && recordGapText!.contains('NEW SCHOOL RECORD');
+    final isNewRecord =
+        recordGapText != null && recordGapText!.contains('NEW SCHOOL RECORD');
 
     return Container(
       padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
       decoration: isLast
           ? null
-          : BoxDecoration(border: Border(bottom: BorderSide(color: C.border(dark), width: 0.5))),
+          : BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: C.border(dark), width: 0.5),
+              ),
+            ),
       child: Column(
         children: [
           Row(
@@ -1958,17 +2286,42 @@ class _PRRow extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(pr['event'] ?? '', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: C.text1(dark))),
-                    Text(pr['set_at_meet'] ?? 'Season best', style: TextStyle(fontSize: 11, color: C.text3(dark))),
+                    Text(
+                      pr['event'] ?? '',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: C.text1(dark),
+                      ),
+                    ),
+                    Text(
+                      pr['set_at_meet'] ?? 'Season best',
+                      style: TextStyle(fontSize: 11, color: C.text3(dark)),
+                    ),
                   ],
                 ),
               ),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(Prefs.of(context).mark(pr['event'] ?? '', pr['best_display'], pr['best_mark_meters']), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: C.accentOf(dark), letterSpacing: -0.5)),
+                  Text(
+                    Prefs.of(context).mark(
+                      pr['event'] ?? '',
+                      pr['best_display'],
+                      pr['best_mark_meters'],
+                    ),
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: C.accentOf(dark),
+                      letterSpacing: -0.5,
+                    ),
+                  ),
                   if (delta > 0)
-                    Text('+${delta.toStringAsFixed(1)}%', style: TextStyle(fontSize: 11, color: C.text3(dark))),
+                    Text(
+                      '+${delta.toStringAsFixed(1)}%',
+                      style: TextStyle(fontSize: 11, color: C.text3(dark)),
+                    ),
                 ],
               ),
             ],
@@ -2016,7 +2369,11 @@ class _PRRow extends StatelessWidget {
                     ? Center(
                         child: Text(
                           recordGapText!,
-                          style: TextStyle(fontSize: 10, color: C.accentOf(dark), fontWeight: FontWeight.w700),
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: C.accentOf(dark),
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       )
                     : Text(
@@ -2040,7 +2397,8 @@ class _PRRow extends StatelessWidget {
     final gapText = gap == null ? null : Prefs.of(context).gap(r.event, gap);
     final status = switch (nationals) {
       null => null,
-      NationalsStatus(inside: true) when gap != null && gap > 0 => 'in by $gapText',
+      NationalsStatus(inside: true) when gap != null && gap > 0 =>
+        'in by $gapText',
       NationalsStatus(inside: true) => 'in',
       NationalsStatus() when gap == 0 => 'tied at the cut',
       NationalsStatus() when gapText != null => '$gapText out',
@@ -2053,7 +2411,9 @@ class _PRRow extends StatelessWidget {
         borderRadius: BorderRadius.circular(100),
       ),
       child: Text(
-        status == null ? '#${r.rank} ${r.label}' : '#${r.rank} ${r.label} · $status',
+        status == null
+            ? '#${r.rank} ${r.label}'
+            : '#${r.rank} ${r.label} · $status',
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w700,
