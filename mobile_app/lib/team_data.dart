@@ -57,6 +57,12 @@ class TeamSnapshot {
   String nameOf(String athleteId) => _names[athleteId] ?? 'Unknown';
   String genderOf(String athleteId) => _genders[athleteId] ?? 'M';
 
+  /// Seasons the team has PRs in, indoor first.
+  late final List<String> seasons = seasonsIn(prs);
+
+  /// The season to show first: that of the team's latest track result.
+  late final String latestSeason = latestSeasonOf(appearances);
+
   /// Every PR the team has set, newest first.
   late final List<PrEvent> prEvents =
       detectPrs(appearances, records: records, genderByAthlete: _genders);
@@ -107,34 +113,44 @@ class TeamData {
     return _inFlight ??= _fetch().whenComplete(() => _inFlight = null);
   }
 
-  Future<List<Map<String, dynamic>>> _fetchPrs(String profileColumns) =>
-      _fetchAll((from, to) => _supabase
-          .from('track_prs')
-          .select(
-              'event, best_display, best_mark_meters, best_time_seconds, improvement_delta_pct, set_on, set_at_meet, athlete_id, profiles($profileColumns)')
-          .order('athlete_id')
-          .order('event')
-          .range(from, to));
+  static const _prColumns =
+      'event, best_display, best_mark_meters, best_time_seconds, improvement_delta_pct, set_on, set_at_meet, athlete_id';
+  static const _appearanceColumns =
+      'athlete_id, event, time_seconds, mark_meters, display_value, meet_name, meet_date';
 
-  Future<TeamSnapshot> _fetch() async {
-    final userId = currentUserId();
-    final results = await Future.wait([
-      // Roster columns come with the roster_status migration; until it's
-      // applied everyone counts as current.
-      _fetchPrs('full_name, gender, on_roster, class_year').catchError(
-          (_) => _fetchPrs('full_name, gender'),
-          test: (e) => e is PostgrestException),
-      // Ordered by the table's unique key so pages never overlap or skip.
+  /// Ordered by the table's unique key so pages never overlap or skip.
+  /// Without [seasons] (before the indoor_outdoor migration) rows have no
+  /// season and seasonOf() guesses it.
+  Future<List<Map<String, dynamic>>> _fetchPrs({bool seasons = true}) =>
+      _fetchAll((from, to) {
+        final q = _supabase
+            .from('track_prs')
+            .select(
+                '${seasons ? 'season, ' : ''}$_prColumns, profiles(full_name, gender, on_roster, class_year)')
+            .order('athlete_id')
+            .order('event');
+        return (seasons ? q.order('season') : q).range(from, to);
+      });
+
+  Future<List<Map<String, dynamic>>> _fetchAppearances({bool seasons = true}) =>
       _fetchAll((from, to) => _supabase
           .from('meet_appearances')
-          .select(
-              'athlete_id, event, time_seconds, mark_meters, display_value, meet_name, meet_date')
+          .select('${seasons ? 'season, ' : ''}$_appearanceColumns')
           .order('meet_date')
           .order('athlete_id')
           .order('event')
           .order('meet_name')
           .order('display_value')
-          .range(from, to)),
+          .range(from, to));
+
+  Future<TeamSnapshot> _fetch() async {
+    final userId = currentUserId();
+    final results = await Future.wait([
+      _fetchPrs().catchError((_) => _fetchPrs(seasons: false),
+          test: (e) => e is PostgrestException),
+      _fetchAppearances().catchError(
+          (_) => _fetchAppearances(seasons: false),
+          test: (e) => e is PostgrestException),
       _supabase.from('school_records').select(),
     ]);
     final snapshot = TeamSnapshot(

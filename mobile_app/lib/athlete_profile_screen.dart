@@ -87,6 +87,7 @@ Future<void> showAthleteSheet(
   required String athleteName,
   required String gender,
   ProfileFocus? focus,
+  String? season,
 }) {
   HapticFeedback.selectionClick();
   // Modal sheets don't see the status bar inset, and callers inside a
@@ -115,6 +116,7 @@ Future<void> showAthleteSheet(
       athleteName: athleteName,
       gender: gender,
       focus: focus,
+      season: season,
     ),
   );
 }
@@ -126,6 +128,7 @@ class _AthleteSheet extends StatefulWidget {
   final String athleteName;
   final String gender;
   final ProfileFocus? focus;
+  final String? season;
 
   const _AthleteSheet({
     required this.safeTop,
@@ -134,6 +137,7 @@ class _AthleteSheet extends StatefulWidget {
     required this.athleteName,
     required this.gender,
     this.focus,
+    this.season,
   });
 
   @override
@@ -240,6 +244,7 @@ class _AthleteSheetState extends State<_AthleteSheet> {
               athleteName: widget.athleteName,
               gender: widget.gender,
               focus: widget.focus,
+              season: widget.season,
               sheet: ProfileSheet(
                 scrollController: scrollController,
                 progress: _progress,
@@ -338,6 +343,10 @@ class AthleteProfileScreen extends StatefulWidget {
   /// The leaderboard result that was tapped, shown in the sheet's peek.
   final ProfileFocus? focus;
 
+  /// The season to open on, e.g. the leaderboard's. Otherwise the season of
+  /// the athlete's latest results.
+  final String? season;
+
   /// Set when shown inside [showAthleteSheet] instead of as a page.
   final ProfileSheet? sheet;
 
@@ -348,6 +357,7 @@ class AthleteProfileScreen extends StatefulWidget {
     required this.gender,
     this.showBackButton = true,
     this.focus,
+    this.season,
     this.sheet,
   });
 
@@ -360,8 +370,10 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
   List<Map<String, dynamic>> _appearances = [];
   List<Map<String, dynamic>> _records = [];
   List<Map<String, dynamic>> _maxes = [];
+  List<Map<String, dynamic>> _rankRows = [];
   Map<String, List<ListRank>> _ranks = {};
   TeamSnapshot? _team;
+  String? _season;
   bool _loading = true;
   String? _error;
   String? _selectedEvent;
@@ -438,21 +450,24 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
             .eq('athlete_id', widget.athleteId)
             .order('lift_type'),
       ]);
-      final ranks = latestRanksByEvent(await ranksFuture);
+      final rankRows = await ranksFuture;
+      final ranks = latestRanksByEvent(rankRows);
       if (!mounted) return;
       setState(() {
         _prs = results[0];
         _appearances = results[1];
         _records = results[2];
         _maxes = results[3];
+        _rankRows = rankRows;
         _ranks = ranks;
         _loading = false;
         _error = null;
-        if (_prs.isNotEmpty) {
+        final prs = _seasonPrs;
+        if (prs.isNotEmpty) {
           final focusEvent = widget.focus?.event;
-          _selectedEvent ??= _prs.any((pr) => pr['event'] == focusEvent)
+          _selectedEvent ??= prs.any((pr) => pr['event'] == focusEvent)
               ? focusEvent
-              : _prs.first['event'];
+              : prs.first['event'];
         }
       });
     } catch (_) {
@@ -510,9 +525,48 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
     return d > m ? d : m;
   });
 
+  /// Seasons this athlete has PRs in, indoor first.
+  List<String> get _seasons => seasonsIn(_prs);
+
+  /// The season shown: the one picked, else the one asked for, else that
+  /// of their latest results, as long as they have PRs in it.
+  String get _seasonNow {
+    final seasons = _seasons;
+    for (final s in [_season, widget.season, latestSeasonOf(_appearances)]) {
+      if (s != null && seasons.contains(s)) return s;
+    }
+    return seasons.isEmpty ? 'outdoor' : seasons.first;
+  }
+
+  List<Map<String, dynamic>> get _seasonPrs {
+    final season = _seasonNow;
+    return _prs.where((pr) => seasonOf(pr) == season).toList();
+  }
+
+  /// The season's national and conference ranks per event.
+  Map<String, List<ListRank>> get _seasonRanks {
+    final season = _seasonNow;
+    return latestRanksByEvent(_rankRows.where((r) => r['season'] == season));
+  }
+
+  void _setSeason(String label) {
+    final season = kSeasons.firstWhere((s) => seasonLabel(s) == label);
+    setState(() {
+      _season = season;
+      final prs = _seasonPrs;
+      if (!prs.any((pr) => pr['event'] == _selectedEvent)) {
+        _selectedEvent = prs.isEmpty ? null : prs.first['event'];
+      }
+    });
+  }
+
   List<ChartPoint> _chartPointsForEvent(String event) {
+    final season = _seasonNow;
     final data = _appearances
-        .where((a) => a['event'] == event && a['meet_date'] != null)
+        .where((a) =>
+            a['event'] == event &&
+            a['meet_date'] != null &&
+            seasonOf(a) == season)
         .toList();
 
     final isField = isFieldEvent(event);
@@ -537,26 +591,15 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
     return points;
   }
 
+  /// The school record for the PR's event and season. Indoor and outdoor
+  /// records are separate, and cross country has none.
   Map<String, dynamic>? _getRecordForPR(Map<String, dynamic> pr) {
     final event = pr['event'] as String? ?? '';
-    final setOn = pr['set_on'] as String? ?? '';
-
-    String season = 'indoor';
-    if (setOn.isNotEmpty) {
-      try {
-        final month = int.parse(setOn.split('-')[1]);
-        season = (month >= 3 && month <= 8) ? 'outdoor' : 'indoor';
-      } catch (_) {}
+    final season = seasonOf(pr);
+    for (final r in _records) {
+      if (r['event'] == event && (r['season'] ?? 'indoor') == season) return r;
     }
-
-    final match = _records
-        .where((r) => r['event'] == event && r['season'] == season)
-        .toList();
-
-    if (match.isNotEmpty) return match.first;
-
-    final fallback = _records.where((r) => r['event'] == event).toList();
-    return fallback.isNotEmpty ? fallback.first : null;
+    return null;
   }
 
   String _recordGapText(Map<String, dynamic> pr, Map<String, dynamic> record) {
@@ -698,8 +741,29 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                   else ...[
                     _insightsRail(dark),
 
+                    // Indoor and outdoor PRs are separate; one season at a
+                    // time from here down to Rivals.
+                    if (_seasons.length > 1) ...[
+                      FadeSlideIn(
+                        delay: const Duration(milliseconds: 100),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: SegmentToggle(
+                            key: const ValueKey('profile-season'),
+                            options: [for (final s in _seasons) seasonLabel(s)],
+                            value: seasonLabel(_seasonNow),
+                            dark: dark,
+                            height: 40,
+                            fontSize: 14,
+                            onChanged: _setSeason,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                    ],
+
                     // Trend chart
-                    if (_prs.isNotEmpty) ...[
+                    if (_seasonPrs.isNotEmpty) ...[
                       FadeSlideIn(
                         delay: const Duration(milliseconds: 120),
                         child: Column(
@@ -711,7 +775,7 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                               height: 36,
                               child: ListView(
                                 scrollDirection: Axis.horizontal,
-                                children: _prs.map((pr) {
+                                children: _seasonPrs.map((pr) {
                                   final event = pr['event'] as String;
                                   return Padding(
                                     padding: const EdgeInsets.only(right: 8),
@@ -746,7 +810,7 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                                       children: [...previous, ?current],
                                     ),
                                     child: InteractiveTrendChart(
-                                      key: ValueKey(_selectedEvent),
+                                      key: ValueKey('$_seasonNow|$_selectedEvent'),
                                       points: _chartPointsForEvent(
                                         _selectedEvent!,
                                       ),
@@ -767,14 +831,15 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                       delay: const Duration(milliseconds: 180),
                       child: _FoldableSection(
                         title: 'Personal Records',
+                        subtitle: _seasons.length > 1 ? null : '${seasonLabel(_seasonNow)} bests',
                         dark: dark,
                         child: GlassCard(
                           forceDark: dark,
                           child: Column(
-                            children: _prs.asMap().entries.map((entry) {
+                            children: _seasonPrs.asMap().entries.map((entry) {
                               final i = entry.key;
                               final pr = entry.value;
-                              final isLast = i == _prs.length - 1;
+                              final isLast = i == _seasonPrs.length - 1;
                               final delta =
                                   (pr['improvement_delta_pct'] as num? ?? 0.0);
                               final record = _getRecordForPR(pr);
@@ -791,7 +856,7 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                                 dark: dark,
                                 recordGapText: gapText,
                                 recordPct: pct,
-                                ranks: _ranks[pr['event']] ?? const [],
+                                ranks: _seasonRanks[pr['event']] ?? const [],
                               );
                             }).toList(),
                           ),
@@ -917,11 +982,14 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
     );
   }
 
-  /// Closest teammates, nearest first.
+  /// Closest teammates this season, nearest first.
   List<Rival> get _rivals {
     final team = _team;
     if (team == null) return const [];
-    return team.rivalsOf(widget.athleteId).values.toList()
+    final season = _seasonNow;
+    return team.rivalsOf(widget.athleteId).values
+        .where((r) => r.season == season)
+        .toList()
       ..sort((a, b) => a.gapPct.compareTo(b.gapPct));
   }
 
@@ -1216,7 +1284,7 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
           if (_getRecordForPR(pr) case final r?)
             if (((isFieldEvent(pr['event'] ?? '') ? r['record_mark_meters'] : r['record_mark_seconds']) as num?)
                 case final value?)
-              pr['event'] as String: RecordRef(
+              eventKey(pr['event'] as String, seasonOf(pr)): RecordRef(
                 value: value.toDouble(),
                 display: r['record_display'] as String? ?? '',
                 holder: r['holder_name'] as String? ?? '',
@@ -1322,6 +1390,7 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
           for (var i = 0; i < meets.length; i++)
             _MeetRow(
               meet: meets[i],
+              season: seasonOf(byMeet[meets[i]]!.first),
               date: parseMeetDate(meetDates[meets[i]]),
               results: [
                 for (final r in byMeet[meets[i]]!)
@@ -1516,11 +1585,17 @@ class _InteractiveTrendChartState extends State<InteractiveTrendChart> {
               _formatShortDate(points.first.date),
               style: TextStyle(fontSize: 10, color: C.text3(dark)),
             ),
-            Text(
-              'Touch and hold to explore',
-              style: TextStyle(
-                fontSize: 10,
-                color: C.text3(dark).withValues(alpha: 0.6),
+            // Gives way first when the text is large.
+            Expanded(
+              child: Text(
+                'Touch and hold to explore',
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: C.text3(dark).withValues(alpha: 0.6),
+                ),
               ),
             ),
             Text(
@@ -1988,6 +2063,7 @@ class _FoldableSectionState extends State<_FoldableSection>
 /// One meet in the history: a date block, the meet, and each event's mark.
 class _MeetRow extends StatelessWidget {
   final String meet;
+  final String season;
   final DateTime? date;
   final List<(String, String)> results;
   final bool isLast;
@@ -1995,6 +2071,7 @@ class _MeetRow extends StatelessWidget {
 
   const _MeetRow({
     required this.meet,
+    required this.season,
     required this.date,
     required this.results,
     required this.isLast,
@@ -2034,6 +2111,9 @@ class _MeetRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Text(seasonLabel(season).toUpperCase(),
+                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, letterSpacing: 0.6, color: C.text3(dark))),
+                const SizedBox(height: 2),
                 Text(meet,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,

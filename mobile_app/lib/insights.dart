@@ -9,6 +9,9 @@ enum InsightKind { schoolRecord, freshPr, trend, nationals, seasonPace, rival, d
 class Insight {
   final InsightKind kind;
   final String event;
+
+  /// 'indoor', 'outdoor' or 'xc'; insights never mix seasons.
+  final String season;
   final String title;
   final String detail;
 
@@ -18,13 +21,14 @@ class Insight {
   const Insight({
     required this.kind,
     required this.event,
+    required this.season,
     required this.title,
     required this.detail,
     required this.score,
   });
 
   @override
-  String toString() => '$kind($event): $title — $detail';
+  String toString() => '$kind($event, $season): $title — $detail';
 }
 
 /// A school record to measure an event against.
@@ -63,11 +67,12 @@ const _closeToCut = 0.05;
 const _closeToRecord = 0.03;
 
 /// The strongest insights for an athlete, at most [limit] and at most two
-/// per event.
+/// per event and season.
 ///
 /// [appearances] are the athlete's meet_appearances rows; [ranks] the latest
-/// list ranks per event; [rivals] their rival per event; [records] the school
-/// record per event; [nameOf] turns an athlete id into a display name.
+/// list ranks per event; [rivals] their rivals; [records] the school record
+/// per event and season, keyed by [eventKey]; [nameOf] turns an athlete id
+/// into a display name.
 List<Insight> athleteInsights({
   required Iterable<Map<String, dynamic>> appearances,
   Map<String, List<ListRank>> ranks = const {},
@@ -83,11 +88,11 @@ List<Insight> athleteInsights({
   final byEvent = _resultsByEvent(appearances);
   final insights = <Insight>[];
 
-  for (final MapEntry(key: event, value: results) in byEvent.entries) {
+  for (final MapEntry(key: (event, season), value: results) in byEvent.entries) {
     final last = results.last;
     final daysSinceLast = today.difference(last.date).inDays;
     final recent = daysSinceLast <= _recentDays;
-    final name = _eventName(event);
+    final name = _eventName(event, season);
 
     // Index of each PR: results that beat everything before them.
     final prIndexes = <int>[];
@@ -104,6 +109,7 @@ List<Insight> athleteInsights({
       insights.add(Insight(
         kind: InsightKind.freshPr,
         event: event,
+        season: season,
         title: 'New PR in the $name',
         detail: '${formatMark(event, last.display, last.value)} on ${_day(last.date)}, '
             '${formatGap(event, gain)} better',
@@ -123,6 +129,7 @@ List<Insight> athleteInsights({
         insights.add(Insight(
           kind: InsightKind.trend,
           event: event,
+          season: season,
           title: '${_capitalize(name)} is trending up',
           detail: 'Better in $better of your last ${form.length} meets',
           score: 70 + better.toDouble(),
@@ -137,7 +144,8 @@ List<Insight> athleteInsights({
       insights.add(Insight(
         kind: InsightKind.drought,
         event: event,
-        title: '$sincePr meets since a ${name.toLowerCase()} PR',
+        season: season,
+        title: '$sincePr meets since an $name PR',
         detail: 'Your best is ${formatMark(event, pr.display, pr.value)} from ${_day(pr.date)}',
         score: 30 + sincePr.toDouble(),
       ));
@@ -149,6 +157,7 @@ List<Insight> athleteInsights({
       insights.add(Insight(
         kind: InsightKind.seasonPace,
         event: event,
+        season: season,
         title: 'Ahead of last season',
         detail: '${_capitalize(name)} is ${formatGap(event, pace)} better than this point last year',
         score: 60,
@@ -157,18 +166,19 @@ List<Insight> athleteInsights({
   }
 
   // School records: holding one, or close to it.
-  for (final MapEntry(key: event, value: record) in records.entries) {
-    final results = byEvent[event];
-    if (results == null || results.isEmpty || record.value <= 0) continue;
+  for (final MapEntry(key: (event, season), value: results) in byEvent.entries) {
+    final record = records[eventKey(event, season)];
+    if (record == null || results.isEmpty || record.value <= 0) continue;
     var best = results.first;
     for (final r in results) {
       if (isBetterMark(event, r.value, best.value)) best = r;
     }
-    final name = _eventName(event);
+    final name = _eventName(event, season);
     if (!isBetterMark(event, record.value, best.value)) {
       insights.add(Insight(
         kind: InsightKind.schoolRecord,
         event: event,
+        season: season,
         title: 'School record holder',
         detail: '${_capitalize(name)}, ${formatMark(event, best.display, best.value)} on ${_day(best.date)}, ${best.date.year}',
         score: 95,
@@ -181,6 +191,7 @@ List<Insight> athleteInsights({
       insights.add(Insight(
         kind: InsightKind.schoolRecord,
         event: event,
+        season: season,
         title: '${formatGap(event, gap)} from the school record',
         detail: '${_capitalize(name)} record: ${record.display}, ${_displayName(record.holder)}$year',
         score: 85 - gap / record.value * 100,
@@ -195,10 +206,12 @@ List<Insight> athleteInsights({
       if (status == null) continue;
       final name = _eventName(event);
       final season = r.seasonLabel.toLowerCase();
+      final seasonId = r.season;
       if (status.inside) {
         insights.add(Insight(
           kind: InsightKind.nationals,
           event: event,
+          season: seasonId,
           title: 'Inside the ${r.label} nationals cut',
           detail: '#${r.rank} in the $name, $season',
           score: 90,
@@ -210,6 +223,7 @@ List<Insight> athleteInsights({
           insights.add(Insight(
             kind: InsightKind.nationals,
             event: event,
+            season: seasonId,
             title: '${formatGap(event, gap)} from the ${r.label} cut',
             detail: '${_capitalize(name)}, #${r.rank} on the $season list',
             score: 80 - gap / cut * 100,
@@ -225,10 +239,11 @@ List<Insight> athleteInsights({
     final rival = closest.first;
     final who = _displayName(nameOf(rival.athleteId));
     final gap = formatGap(rival.event, rival.gap);
-    final name = _eventName(rival.event);
+    final name = _eventName(rival.event, rival.season);
     insights.add(Insight(
       kind: InsightKind.rival,
       event: rival.event,
+      season: rival.season,
       title: rival.isAhead ? '$gap behind $who' : '$gap ahead of $who',
       detail: rival.isAhead ? 'Closest teammate in the $name' : 'Holding off your closest teammate in the $name',
       score: 50 - rival.gapPct,
@@ -240,16 +255,18 @@ List<Insight> athleteInsights({
   final picked = <Insight>[];
   for (final insight in insights) {
     if (picked.length == limit) break;
-    if ((perEvent[insight.event] ?? 0) >= 2) continue;
-    perEvent[insight.event] = (perEvent[insight.event] ?? 0) + 1;
+    final key = eventKey(insight.event, insight.season);
+    if ((perEvent[key] ?? 0) >= 2) continue;
+    perEvent[key] = (perEvent[key] ?? 0) + 1;
     picked.add(insight);
   }
   return picked;
 }
 
-/// Each event's results, oldest first, one per day (the best that day).
-Map<String, List<_Result>> _resultsByEvent(Iterable<Map<String, dynamic>> appearances) {
-  final byDay = <String, Map<DateTime, _Result>>{};
+/// Each event and season's results, oldest first, one per day (the best
+/// that day).
+Map<(String, String), List<_Result>> _resultsByEvent(Iterable<Map<String, dynamic>> appearances) {
+  final byDay = <(String, String), Map<DateTime, _Result>>{};
   for (final a in appearances) {
     final event = a['event'] as String?;
     final date = parseMeetDate(a['meet_date']);
@@ -258,7 +275,7 @@ Map<String, List<_Result>> _resultsByEvent(Iterable<Map<String, dynamic>> appear
     final v = ((field ? a['mark_meters'] : a['time_seconds']) as num?)?.toDouble();
     if (v == null || v <= 0) continue;
     final result = _Result(date, v, a['display_value'] as String? ?? '', a['meet_name'] as String? ?? '');
-    final days = byDay.putIfAbsent(event, () => {});
+    final days = byDay.putIfAbsent((event, seasonOf(a)), () => {});
     final existing = days[date];
     if (existing == null || isBetterMark(event, v, existing.value)) days[date] = result;
   }
@@ -290,11 +307,16 @@ double? _seasonPace(String event, List<_Result> results, DateTime today) {
   return isBetterMark(event, now, then) ? (now - then).abs() : -(now - then).abs();
 }
 
-/// '400 Meters' → '400m', 'Long Jump' → 'long jump'.
-String _eventName(String event) {
+/// '400 Meters' → '400m', 'Long Jump' → 'long jump'. With a [season],
+/// 'outdoor 400m', 'indoor long jump', 'XC 8k'.
+String _eventName(String event, [String? season]) {
   final m = RegExp(r'^(\d+) Meters?$').firstMatch(event);
-  if (m != null) return '${m.group(1)}m';
-  return event.toLowerCase();
+  final name = m != null ? '${m.group(1)}m' : event.toLowerCase();
+  return switch (season) {
+    null => name,
+    'xc' => 'XC $name',
+    _ => '$season $name',
+  };
 }
 
 String _capitalize(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);

@@ -34,7 +34,9 @@ class ActivityFeed {
     return _recent(snap).where((e) {
       if (p.alertRecords && e.schoolRecord) return true;
       if (e.athleteId == me) return p.alertMine;
-      if (rivals[e.event]?.athleteId == e.athleteId) return p.alertRivals;
+      if (rivals[eventKey(e.event, e.season)]?.athleteId == e.athleteId) {
+        return p.alertRivals;
+      }
       return p.alertTeam;
     }).toList();
   }
@@ -125,7 +127,8 @@ class _ActivityScreenState extends State<ActivityScreen> {
     }
   }
 
-  bool _isRival(PrEvent p) => _myRivals[p.event]?.athleteId == p.athleteId;
+  bool _isRival(PrEvent p) =>
+      _myRivals[eventKey(p.event, p.season)]?.athleteId == p.athleteId;
 
   List<PrEvent> get _items {
     final all = ActivityFeed.itemsOf(_snap!);
@@ -363,6 +366,7 @@ class _ActivityRow extends StatelessWidget {
     final prefs = Prefs.of(context);
     final sign = isFieldEvent(pr.event) ? '+' : '−';
     final detail = [
+      seasonLabel(pr.season),
       prefs.mark(pr.event, pr.display, pr.value),
       '$sign${prefs.gap(pr.event, pr.gap)} (${pr.improvementPct.toStringAsFixed(1)}%)',
       if (pr.meetName.isNotEmpty) pr.meetName,

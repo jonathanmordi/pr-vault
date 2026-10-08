@@ -32,7 +32,6 @@ class LeaderboardScreen extends StatefulWidget {
 class _LeaderboardScreenState extends State<LeaderboardScreen> {
   TeamSnapshot? _snap;
   List<Map<String, dynamic>> _entries = [];
-  List<Map<String, dynamic>> _grouped = [];
   Map<String, List<double>> _sparklines = {};
   bool _loading = true;
   bool _initialLoad = true;
@@ -43,6 +42,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   String _tab = 'heat';
   String _search = '';
   String _gender = 'All';
+  String? _season; // null = the season of the team's latest results
   TrendWindow? _window; // null = the snapshot's current season
   bool _trendByPoints = false;
   /// PR Rankings: include alumni (everyone who's competed for the team).
@@ -104,48 +104,76 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
       ..sort((a, b) => (b['improvement_delta_pct'] as num? ?? 0)
           .compareTo(a['improvement_delta_pct'] as num? ?? 0));
 
-    // Sparklines per athlete + event. Appearances arrive oldest first.
+    // Sparklines per athlete, event and season. Appearances arrive oldest
+    // first.
     final Map<String, List<double>> sparklines = {};
     for (final a in snap.appearances) {
       final val = (a['time_seconds'] as num?)?.toDouble() ??
           (a['mark_meters'] as num?)?.toDouble();
       if (val != null && val > 0) {
-        final key = '${a['athlete_id']}_${a['event'] ?? ''}';
+        final key = '${a['athlete_id']}_${eventKey(a['event'] ?? '', seasonOf(a))}';
         sparklines.putIfAbsent(key, () => []).add(val);
       }
     }
 
-    final Map<String, Map<String, dynamic>> best = {};
-    for (final e in data) {
-      final id = e['athlete_id'] as String;
-      final d = (e['improvement_delta_pct'] ?? 0.0) as num;
-      if (!best.containsKey(id) ||
-          d > (best[id]!['improvement_delta_pct'] as num)) {
-        best[id] = e;
-      }
-    }
-    final grouped = best.values.toList()
-      ..sort((a, b) => (b['improvement_delta_pct'] as num? ?? 0)
-          .compareTo(a['improvement_delta_pct'] as num? ?? 0));
-
     _snap = snap;
     _entries = data;
-    _grouped = grouped;
     _sparklines = sparklines;
+    if (_season != null && !snap.seasons.contains(_season)) _season = null;
     _loading = false;
     _error = null;
     if (_window != null && !snap.windows.contains(_window)) _window = null;
   }
 
+  String get _seasonNow => _season ?? _snap?.latestSeason ?? 'outdoor';
+
+  /// The season's PRs; indoor and outdoor are never ranked together.
+  Iterable<Map<String, dynamic>> get _seasonEntries {
+    final season = _seasonNow;
+    return _entries.where((e) => seasonOf(e) == season);
+  }
+
+  /// Events with PRs this season, so indoor hides the 100m and outdoor
+  /// hides the 60m.
+  Set<String> get _seasonEvents =>
+      {for (final e in _seasonEntries) e['event'] as String? ?? ''};
+
+  bool _groupHasEvents(String group, Set<String> events) =>
+      group == 'All' || (_eventGroups[group] ?? []).any(events.contains);
+
+  void _setSeason(String label) {
+    final season = kSeasons.firstWhere((s) => seasonLabel(s) == label);
+    setState(() {
+      _season = season;
+      final events = _seasonEvents;
+      if (_subEvent != null && !events.contains(_subEvent)) _subEvent = null;
+      if (!_groupHasEvents(_group, events)) {
+        _group = 'All';
+        _subEvent = null;
+      }
+    });
+  }
+
   List<Map<String, dynamic>> get _filtered {
     List<Map<String, dynamic>> list;
+    final entries = _seasonEntries;
 
     if (_subEvent != null) {
-      list = _entries.where((e) => e['event'] == _subEvent).toList();
+      list = entries.where((e) => e['event'] == _subEvent).toList();
     } else if (_group == 'All') {
-      list = List.from(_grouped);
+      // Each athlete's biggest improvement.
+      final best = <String, Map<String, dynamic>>{};
+      for (final e in entries) {
+        final id = e['athlete_id'] as String;
+        final d = (e['improvement_delta_pct'] ?? 0.0) as num;
+        if (!best.containsKey(id) ||
+            d > (best[id]!['improvement_delta_pct'] as num? ?? 0)) {
+          best[id] = e;
+        }
+      }
+      list = best.values.toList();
     } else {
-      list = _entries
+      list = entries
           .where((e) => (_eventGroups[_group] ?? []).contains(e['event']))
           .toList();
     }
@@ -200,6 +228,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
       athleteId: entry['athlete_id'] ?? '',
       athleteName: entry['profiles']?['full_name'] ?? 'Unknown',
       gender: entry['profiles']?['gender'] ?? 'M',
+      season: seasonOf(entry),
       focus: ProfileFocus(
         event: event,
         display: entry['best_display'],
@@ -217,6 +246,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
       athleteId: athleteId,
       athleteName: snap.nameOf(athleteId),
       gender: snap.genderOf(athleteId),
+      season: _seasonNow,
     );
   }
 
@@ -389,6 +419,17 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
+                if ((_snap?.seasons.length ?? 0) > 1) ...[
+                  DropToggle(
+                    key: const ValueKey('season'),
+                    options: [for (final s in _snap!.seasons) seasonLabel(s)],
+                    value: seasonLabel(_seasonNow),
+                    dark: dark,
+                    width: 96,
+                    onChanged: _setSeason,
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 DropToggle(
                   key: const ValueKey('gender'),
                   options: const ['All', 'M', 'F'],
@@ -424,9 +465,11 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   }
 
   Widget _buildChips(bool dark) {
+    final events = _seasonEvents;
     return ChipRow(
       chips: [
         for (final g in _eventGroups.keys)
+          if (_groupHasEvents(g, events))
           AppChip(
             label: g,
             selected: g == _group,
@@ -441,7 +484,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   }
 
   Widget _buildSubChips(bool dark) {
-    final events = _eventGroups[_group] ?? [];
+    final inSeason = _seasonEvents;
+    final events = (_eventGroups[_group] ?? []).where(inSeason.contains);
     return ChipRow(
       height: 44,
       chips: [
@@ -570,7 +614,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         ),
         child: KeyedSubtree(
           key: ValueKey(
-              '$_tab|$_group|$_subEvent|$_gender|${_window?.id}|$_trendByPoints|$_allTime'),
+              '$_tab|$_seasonNow|$_group|$_subEvent|$_gender|${_window?.id}|$_trendByPoints|$_allTime'),
           child: content,
         ),
       ),
@@ -626,7 +670,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         final entry = list[actualIndex];
         final id = entry['athlete_id'] as String? ?? actualIndex.toString();
         final event = entry['event'] ?? '';
-        final sparkData = _sparklines['${id}_$event'] ?? [];
+        final sparkData =
+            _sparklines['${id}_${eventKey(event, seasonOf(entry))}'] ?? [];
 
         return FadeSlideIn(
           key: ValueKey('lb-$id-$event'),
@@ -653,7 +698,9 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         _subEvent != null ? {_subEvent!} : _eventGroups[_group]?.toSet();
     final q = _search.toLowerCase();
 
+    final season = _seasonNow;
     final prs = snap.prEvents.where((p) {
+      if (p.season != season) return false;
       if (!window.contains(p.date)) return false;
       if (events != null && !events.contains(p.event)) return false;
       if (_gender != 'All' && snap.genderOf(p.athleteId) != _gender) {
@@ -674,8 +721,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
           : window.isSeason
               ? ' in the ${window.label} season'
               : ' in the last 30 days';
-      return _message(
-          dark, Icons.local_fire_department_outlined, 'No PRs$when yet.');
+      return _message(dark, Icons.local_fire_department_outlined,
+          'No ${seasonLabel(season).toLowerCase().replaceFirst('xc', 'XC')} PRs$when yet.');
     }
 
     return ListView.builder(

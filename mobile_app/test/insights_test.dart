@@ -46,7 +46,7 @@ void main() {
   test('a PR at the latest meet in the last month is news', () {
     final xs = insightsFor([jump('2026-01-10', 6.50), jump('2026-02-20', 6.62)]);
     final pr = xs.firstWhere((i) => i.kind == InsightKind.freshPr);
-    expect(pr.title, 'New PR in the long jump');
+    expect(pr.title, 'New PR in the indoor long jump');
     expect(pr.detail, '6.62m on Feb 20, 0.12m better');
   });
 
@@ -61,8 +61,26 @@ void main() {
       run('2026-02-14', 51.2), run('2026-02-21', 50.8),
     ]);
     final trend = xs.firstWhere((i) => i.kind == InsightKind.trend);
-    expect(trend.title, '400m is trending up');
+    expect(trend.title, 'Indoor 400m is trending up');
     expect(trend.detail, 'Better in 3 of your last 5 meets');
+  });
+
+  test('indoor and outdoor are separate: an outdoor PR only beats outdoor marks', () {
+    final xs = insightsFor([
+      jump('2026-02-14', 6.95, meet: 'MAC Indoor Championships'),
+      jump('2026-04-11', 6.70, meet: 'Invite'),
+      jump('2026-04-25', 6.78, meet: 'Invite'),
+    ], today: '2026-05-01');
+    final pr = xs.firstWhere((i) => i.kind == InsightKind.freshPr);
+    expect(pr.title, 'New PR in the outdoor long jump');
+    expect(pr.season, 'outdoor');
+    expect(pr.detail, '6.78m on Apr 25, 0.08m better');
+  });
+
+  test('results with a season use it over the guess', () {
+    Map<String, dynamic> lj(String date, double m, String season) => {...jump(date, m), 'season': season};
+    final xs = insightsFor([lj('2026-04-04', 6.50, 'indoor'), lj('2026-04-18', 6.62, 'indoor')], today: '2026-04-20');
+    expect(xs.firstWhere((i) => i.kind == InsightKind.freshPr).title, 'New PR in the indoor long jump');
   });
 
   test('a mixed run of results is not a trend', () {
@@ -78,7 +96,7 @@ void main() {
       jump('2026-02-14', 6.80), jump('2026-02-21', 6.72),
     ]);
     final d = xs.firstWhere((i) => i.kind == InsightKind.drought);
-    expect(d.title, '4 meets since a long jump PR');
+    expect(d.title, '4 meets since an indoor long jump PR');
     expect(d.detail, 'Your best is 6.90m from Jan 10');
   });
 
@@ -95,7 +113,7 @@ void main() {
       jump('2026-01-24', 6.60), // this season, by Mar 1
     ]);
     final pace = xs.firstWhere((i) => i.kind == InsightKind.seasonPace);
-    expect(pace.detail, 'Long jump is 0.15m better than this point last year');
+    expect(pace.detail, 'Indoor long jump is 0.15m better than this point last year');
   });
 
   group('nationals', () {
@@ -125,7 +143,7 @@ void main() {
     const rival = Rival(athleteId: 'okafor', event: 'Triple Jump', myValue: 14.0, theirValue: 14.12, theirDisplay: '14.12m');
     final xs = insightsFor([], rivals: {'Triple Jump': rival});
     expect(xs.single.title, '0.12m behind Daniel Okafor');
-    expect(xs.single.detail, 'Closest teammate in the triple jump');
+    expect(xs.single.detail, 'Closest teammate in the outdoor triple jump');
   });
 
   test('strongest first, capped, at most two per event', () {
@@ -143,28 +161,28 @@ void main() {
 
     test('close to the record', () {
       final xs = insightsFor([jump('2026-01-10', 6.80), jump('2026-02-20', 6.91)],
-          records: {'Long Jump': record}, today: '2026-10-07');
+          records: {'Long Jump|indoor': record}, today: '2026-10-07');
       final r = xs.single;
       expect(r.kind, InsightKind.schoolRecord);
       expect(r.title, '0.05m from the school record');
-      expect(r.detail, "Long jump record: 6.96m, Nicholas Lowe '11");
+      expect(r.detail, "Indoor long jump record: 6.96m, Nicholas Lowe '11");
     });
 
     test('holding the record', () {
-      final xs = insightsFor([jump('2026-02-20', 7.01)], records: {'Long Jump': record}, today: '2026-10-07');
+      final xs = insightsFor([jump('2026-02-20', 7.01)], records: {'Long Jump|indoor': record}, today: '2026-10-07');
       expect(xs.single.title, 'School record holder');
-      expect(xs.single.detail, 'Long jump, 7.01m on Feb 20, 2026');
+      expect(xs.single.detail, 'Indoor long jump, 7.01m on Feb 20, 2026');
     });
 
     test('far from the record says nothing', () {
-      expect(insightsFor([jump('2026-02-20', 6.20)], records: {'Long Jump': record}, today: '2026-10-07'), isEmpty);
+      expect(insightsFor([jump('2026-02-20', 6.20)], records: {'Long Jump|indoor': record}, today: '2026-10-07'), isEmpty);
     });
 
     test('times: faster than the record holds it', () {
       const r400 = RecordRef(value: 48.10, display: '48.10', holder: 'Smith, A');
-      expect(insightsFor([run('2026-02-20', 48.05)], records: {'400 Meters': r400}, today: '2026-10-07')
-          .single.detail, startsWith('400m, 48.05'));
-      expect(insightsFor([run('2026-02-20', 49.0)], records: {'400 Meters': r400}, today: '2026-10-07')
+      expect(insightsFor([run('2026-02-20', 48.05)], records: {'400 Meters|indoor': r400}, today: '2026-10-07')
+          .single.detail, startsWith('Indoor 400m, 48.05'));
+      expect(insightsFor([run('2026-02-20', 49.0)], records: {'400 Meters|indoor': r400}, today: '2026-10-07')
           .single.title, '0.90s from the school record');
     });
   });

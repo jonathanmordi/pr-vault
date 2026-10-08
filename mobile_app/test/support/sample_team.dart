@@ -1,5 +1,6 @@
 // A small fake team for widget tests: realistic TFRRS-style names, a long
-// name and meet names to stress layouts, and two seasons of results.
+// name and meet names to stress layouts, and results across indoor and
+// outdoor seasons, with one PR per event per season as in the database.
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -20,10 +21,12 @@ class _Series {
 const _series = [
   _Series('me', 'Mordi, Jonathan', 'M', 'Triple Jump', [
     ('2025-01-18', 13.41), ('2025-02-22', 13.62), ('2025-12-06', 13.55),
-    ('2026-01-24', 13.88), ('2026-02-28', 14.02), ('2026-04-18', 14.10),
+    ('2026-01-24', 13.88), ('2026-02-28', 14.02), ('2026-04-04', 13.95),
+    ('2026-04-18', 14.10),
   ]),
   _Series('me', 'Mordi, Jonathan', 'M', 'Long Jump', [
-    ('2025-12-06', 6.71), ('2026-02-07', 6.88), ('2026-05-02', 6.93),
+    ('2025-12-06', 6.71), ('2026-02-07', 6.88), ('2026-04-11', 6.85),
+    ('2026-05-02', 6.93),
   ]),
   _Series('okafor', 'Okafor, Daniel', 'M', 'Triple Jump', [
     ('2025-12-06', 13.80), ('2026-01-24', 14.05), ('2026-03-28', 14.22),
@@ -52,11 +55,13 @@ const _series = [
   ]),
 ];
 
-const _meets = [
-  'Fastrack National Invitational at the Ocean Breeze Athletic Complex',
-  'MAC Indoor Championships',
-  'Stevens Duck Classic',
-];
+const _meets = {
+  'indoor': [
+    'Fastrack National Invitational at the Ocean Breeze Athletic Complex',
+    'MAC Indoor Championships',
+  ],
+  'outdoor': ['Stevens Duck Classic', 'MAC Outdoor Championships'],
+};
 
 String _display(String event, double v) {
   if (isFieldEvent(event)) return '${v.toStringAsFixed(2)}m';
@@ -73,39 +78,50 @@ TeamSnapshot sampleTeam({Set<String> alumni = const {}}) {
   final prs = <Map<String, dynamic>>[];
   for (final s in _series) {
     final field = isFieldEvent(s.event);
+    final bySeason = <String, List<(String, double)>>{};
     var i = 0;
     for (final (date, v) in s.results) {
+      final season = guessSeason(s.event, null, DateTime.parse(date));
+      bySeason.putIfAbsent(season, () => []).add((date, v));
+      final meets = _meets[season]!;
       appearances.add({
         'athlete_id': s.athleteId,
         'event': s.event,
+        'season': season,
         'time_seconds': field ? null : v,
         'mark_meters': field ? v : null,
         'display_value': _display(s.event, v),
-        'meet_name': _meets[i++ % _meets.length],
+        'meet_name': meets[i++ % meets.length],
         'meet_date': date,
       });
     }
-    final values = s.results.map((r) => r.$2).toList();
-    final best = field
-        ? values.reduce((a, b) => a > b ? a : b)
-        : values.reduce((a, b) => a < b ? a : b);
-    final prev = values.length > 1 ? values[values.length - 2] : best;
-    prs.add({
-      'athlete_id': s.athleteId,
-      'event': s.event,
-      'best_time_seconds': field ? null : best,
-      'best_mark_meters': field ? best : null,
-      'best_display': _display(s.event, best),
-      'improvement_delta_pct': (best - prev).abs() / prev * 100,
-      'set_on': s.results.last.$1,
-      'set_at_meet': _meets.first,
-      'profiles': {
-        'full_name': s.name,
-        'gender': s.gender,
-        'on_roster': !alumni.contains(s.athleteId),
-        'class_year': 'JR-3',
-      },
-    });
+    // One PR per season: the best, and how much it beat the best before.
+    for (final MapEntry(key: season, value: results) in bySeason.entries) {
+      bool better(double a, double b) => field ? a > b : a < b;
+      var best = results.first;
+      for (final r in results) {
+        if (better(r.$2, best.$2)) best = r;
+      }
+      final before = [for (final r in results) if (r.$1.compareTo(best.$1) < 0) r.$2];
+      final prev = before.isEmpty ? null : before.reduce((a, b) => better(a, b) ? a : b);
+      prs.add({
+        'athlete_id': s.athleteId,
+        'event': s.event,
+        'season': season,
+        'best_time_seconds': field ? null : best.$2,
+        'best_mark_meters': field ? best.$2 : null,
+        'best_display': _display(s.event, best.$2),
+        'improvement_delta_pct': prev == null ? 0.0 : (best.$2 - prev).abs() / prev * 100,
+        'set_on': best.$1,
+        'set_at_meet': _meets[season]!.first,
+        'profiles': {
+          'full_name': s.name,
+          'gender': s.gender,
+          'on_roster': !alumni.contains(s.athleteId),
+          'class_year': 'JR-3',
+        },
+      });
+    }
   }
   appearances.sort((a, b) =>
       (a['meet_date'] as String).compareTo(b['meet_date'] as String));

@@ -112,6 +112,90 @@ def clean_event_name(raw: str) -> str:
     return re.sub(r'\s+', ' ', raw).strip()
 
 
+# Cross country races are named by distance on TFRRS: 8k, 6k, 5k.
+_XC_EVENT = re.compile(r'^\d+(\.\d+)?k$', re.IGNORECASE)
+
+
+def parse_event_heading(raw: str) -> tuple[str, str | None]:
+    """An event-history heading → (event, season). TFRRS heads each table
+    'Long Jump (Indoor)' or 'Long Jump (Outdoor)'; cross country tables, '8k',
+    have no label. Season is 'indoor', 'outdoor', 'xc', or None if unlabeled."""
+    label = re.search(r'\((Indoor|Outdoor)s?\)', raw, flags=re.IGNORECASE)
+    event = clean_event_name(raw)
+    if label:
+        return event, label.group(1).lower()
+    return event, 'xc' if _XC_EVENT.match(event) else None
+
+
+_INDOOR_ONLY = {'55 Meters', '60 Meters', '55 Hurdles', '60 Hurdles', '300 Meters',
+                '500 Meters', '600 Meters', '1000 Meters', 'Weight Throw', 'Pentathlon'}
+_OUTDOOR_ONLY = {'100 Meters', '100 Hurdles', '110 Hurdles', '400 Hurdles', '10,000 Meters',
+                 '3000 Steeplechase', 'Hammer', 'Discus', 'Javelin', 'Decathlon', '4 x 100 Relay'}
+
+
+def guess_season(event: str, meet_name: str | None, meet_date: str | None) -> str:
+    """The season of a result TFRRS didn't label. Same rules as the
+    database's guess_track_season(): event, meet name, then the date
+    (indoor runs from November to mid-March)."""
+    if _XC_EVENT.match(event or ''):
+        return 'xc'
+    meet = (meet_name or '').lower()
+    if 'indoor' in meet:
+        return 'indoor'
+    if 'outdoor' in meet:
+        return 'outdoor'
+    if event in _INDOOR_ONLY:
+        return 'indoor'
+    if event in _OUTDOOR_ONLY:
+        return 'outdoor'
+    if meet_date and len(meet_date) >= 10:
+        month, day = int(meet_date[5:7]), int(meet_date[8:10])
+        if month in (11, 12, 1, 2) or (month == 3 and day <= 15):
+            return 'indoor'
+    return 'outdoor'
+
+
+def compute_prs(results: list[dict]) -> dict[tuple[str, str], dict]:
+    """Each (event, season)'s PR from an athlete's results: the best mark
+    (the earliest, if tied) and how much it improved on their best before
+    that day. Only one result a day counts, as in the app, so a final isn't
+    a PR over the same day's prelim. Results are dicts with event, season,
+    new_seconds, new_meters, display, meet_name, meet_date."""
+    def score(r):
+        return r['new_meters'] if r['new_meters'] is not None else -r['new_seconds']
+
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for r in results:
+        if r['new_meters'] is None and r['new_seconds'] is None:
+            continue
+        groups.setdefault((r['event'], r['season']), []).append(r)
+
+    prs = {}
+    for key, rs in groups.items():
+        best = min(rs, key=lambda r: (-score(r), r['meet_date'] or '9999-99-99'))
+        before = [score(r) for r in rs
+                  if r['meet_date'] and best['meet_date'] and r['meet_date'] < best['meet_date']]
+        previous = max(before) if before else None
+        if previous is None or previous == 0:
+            delta = 0.0
+        elif best['new_meters'] is not None:
+            delta = (score(best) - previous) / previous * 100
+        else:
+            delta = (-previous - best['new_seconds']) / -previous * 100
+        prs[key] = {
+            'event': key[0],
+            'season': key[1],
+            'best_time_seconds': best['new_seconds'],
+            'best_mark_meters': best['new_meters'],
+            'best_display': best['display'],
+            'set_on': best['meet_date'],
+            'set_at_meet': best['meet_name'],
+            'previous_best_seconds': -previous if previous is not None and best['new_seconds'] is not None else None,
+            'improvement_delta_pct': round(delta, 4),
+        }
+    return prs
+
+
 def clean_mark(raw: str) -> str | None:
     """Extract just the mark/time from td[0], skipping DNS/DNF/FS and wind readings."""
     raw = raw.strip()
@@ -129,15 +213,11 @@ def clean_mark(raw: str) -> str | None:
     return tokens[0].strip()
 
 
-def check_and_update_school_record(team_id, gender, event, new_seconds, new_meters, display, holder_name, meet_date):
-    """If the new mark beats the school record, update it."""
+def check_and_update_school_record(team_id, gender, event, season, new_seconds, new_meters, display, holder_name, meet_date):
+    """If the new mark beats the school record for its season, update it."""
+    if season not in ('indoor', 'outdoor'):
+        return
     try:
-        # Determine season from meet date
-        season = 'indoor'
-        if meet_date and len(meet_date) >= 7:
-            month = int(meet_date[5:7])
-            season = 'outdoor' if 3 <= month <= 8 else 'indoor'
-
         result = supabase.table("school_records") \
             .select("id, record_mark_seconds, record_mark_meters") \
             .eq("team_id", team_id) \
@@ -174,96 +254,81 @@ def check_and_update_school_record(team_id, gender, event, new_seconds, new_mete
         print(f"  🏆 SCHOOL RECORD BROKEN: {event} {display} (was {existing.get('record_mark_seconds') or existing.get('record_mark_meters')})")
 
 
-def upsert_pr_if_faster(athlete_id, team_id, event, new_seconds, new_meters, display, meet_name, meet_date, gender, holder_name):
-    """Writes to meet_appearances always. Updates track_prs only if better."""
+def _pr_changed(stored: dict | None, pr: dict) -> bool:
+    if stored is None:
+        return True
+    def num(v):
+        return None if v is None else round(float(v), 4)
+    return (num(stored.get('best_time_seconds')) != num(pr['best_time_seconds'])
+            or num(stored.get('best_mark_meters')) != num(pr['best_mark_meters'])
+            or stored.get('set_on') != pr['set_on']
+            or stored.get('set_at_meet') != pr['set_at_meet']
+            or num(stored.get('improvement_delta_pct')) != num(pr['improvement_delta_pct']))
 
-    # Always log the appearance
+
+def _is_better(pr: dict, stored: dict | None) -> bool:
+    if stored is None:
+        return True
+    if pr['best_mark_meters'] is not None:
+        return pr['best_mark_meters'] > float(stored.get('best_mark_meters') or 0)
+    return pr['best_time_seconds'] < float(stored.get('best_time_seconds') or 9999)
+
+
+def save_results(athlete_id, team_id, gender, holder_name, results):
+    """Logs every result, then makes the athlete's PRs match them: one per
+    event per season, worked out from their whole history, so a PR is
+    never stale or filed under the wrong season."""
+    if not results:
+        return
+    # One row per result: a meet can list the same mark twice (a prelim and
+    # a final), and a batch upsert can't write the same row twice.
+    unique = {}
+    for r in results:
+        unique.setdefault((r["event"], r["meet_name"], r["meet_date"], r["display"]), r)
     supabase.table("meet_appearances").upsert(
-        {
+        [{
             "athlete_id": athlete_id,
             "team_id": team_id,
-            "event": event,
-            "time_seconds": new_seconds,
-            "mark_meters": new_meters,
-            "display_value": display,
-            "meet_name": meet_name,
-            "meet_date": meet_date,
-            "was_pr": False
-        },
-        on_conflict="athlete_id,event,meet_name,meet_date,display_value"
+            "event": r["event"],
+            "season": r["season"],
+            "time_seconds": r["new_seconds"],
+            "mark_meters": r["new_meters"],
+            "display_value": r["display"],
+            "meet_name": r["meet_name"],
+            "meet_date": r["meet_date"],
+            "was_pr": False,
+        } for r in unique.values()],
+        on_conflict="athlete_id,event,meet_name,meet_date,display_value",
     ).execute()
 
-    # Check for existing PR
-    try:
-        result = supabase.table("track_prs") \
-            .select("id, best_time_seconds, best_mark_meters") \
-            .eq("athlete_id", athlete_id) \
-            .eq("event", event) \
-            .maybe_single() \
-            .execute()
-        existing = result.data if result else None
-    except Exception:
-        existing = None
+    stored_rows = supabase.table("track_prs") \
+        .select("id, event, season, best_time_seconds, best_mark_meters, set_on, set_at_meet, improvement_delta_pct") \
+        .eq("athlete_id", athlete_id) \
+        .execute().data or []
+    stored = {(r["event"], r["season"]): r for r in stored_rows}
+    prs = compute_prs(results)
 
-    is_field = new_meters is not None
-
-    if existing is None:
-        # Brand new PR
-        supabase.table("track_prs").insert({
-            "athlete_id": athlete_id,
-            "team_id": team_id,
-            "event": event,
-            "best_time_seconds": new_seconds,
-            "best_mark_meters": new_meters,
-            "best_display": display,
-            "set_on": meet_date,
-            "set_at_meet": meet_name,
-            "data_source": "tfrrs",
-            "improvement_delta_pct": 0
-        }).execute()
-        print(f"  NEW PR inserted: {event} {display}")
-
-        # Check if this also breaks the school record
-        check_and_update_school_record(
-            team_id, gender, event, new_seconds, new_meters,
-            display, holder_name, meet_date
-        )
-    else:
-        if is_field:
-            existing_mark = existing.get("best_mark_meters") or 0
-            is_better = new_meters > existing_mark
-            if existing_mark > 0:
-                delta = ((new_meters - existing_mark) / existing_mark) * 100
-            else:
-                delta = 0
-        else:
-            existing_time = existing.get("best_time_seconds") or 9999
-            is_better = new_seconds < existing_time
-            if existing_time < 9999:
-                delta = ((existing_time - new_seconds) / existing_time) * 100
-            else:
-                delta = 0
-
-        if is_better:
-            supabase.table("track_prs").update({
-                "previous_best_seconds": existing.get("best_time_seconds"),
-                "best_time_seconds": new_seconds,
-                "best_mark_meters": new_meters,
-                "best_display": display,
-                "set_on": meet_date,
-                "set_at_meet": meet_name,
-                "improvement_delta_pct": round(delta, 4),
-                "updated_at": "now()"
-            }).eq("id", existing["id"]).execute()
-            print(f"  PR UPDATED: {event} {display} (improved {round(delta, 2)}%)")
-
-            # Check if this also breaks the school record
+    for key, pr in prs.items():
+        old = stored.get(key)
+        if not _pr_changed(old, pr):
+            continue
+        supabase.table("track_prs").upsert(
+            {**pr, "athlete_id": athlete_id, "team_id": team_id, "data_source": "tfrrs",
+             "updated_at": datetime.now().astimezone().isoformat()},
+            on_conflict="athlete_id,event,season",
+        ).execute()
+        print(f"  PR {'NEW' if old is None else 'UPDATED'}: {pr['event']} ({pr['season']}) {pr['best_display']}")
+        if _is_better(pr, old):
             check_and_update_school_record(
-                team_id, gender, event, new_seconds, new_meters,
-                display, holder_name, meet_date
-            )
-        else:
-            print(f"  No PR: {event} {display} — not better than existing")
+                team_id, gender, pr["event"], pr["season"], pr["best_time_seconds"],
+                pr["best_mark_meters"], pr["best_display"], holder_name, pr["set_on"])
+
+    # PRs for an event and season with no results any more, such as ones
+    # filed under a guessed season before TFRRS's labels were read.
+    stale = [r["id"] for key, r in stored.items() if key not in prs]
+    if stale:
+        supabase.table("track_prs").delete().in_("id", stale).execute()
+        print(f"  Removed {len(stale)} PRs with no results")
 
 
 def scrape_athlete(page, tfrrs_athlete_id, athlete_id, team_id, gender, athlete_name):
@@ -289,7 +354,7 @@ def scrape_athlete(page, tfrrs_athlete_id, athlete_id, team_id, gender, athlete_
         if not thead:
             continue
 
-        event = clean_event_name(thead.inner_text())
+        event, labeled_season = parse_event_heading(thead.inner_text())
         if not event:
             continue
 
@@ -322,6 +387,7 @@ def scrape_athlete(page, tfrrs_athlete_id, athlete_id, team_id, gender, athlete_
 
             all_results.append({
                 "event": event,
+                "season": labeled_season or guess_season(event, meet_name, meet_date),
                 "new_seconds": new_seconds,
                 "new_meters": new_meters,
                 "display": display,
@@ -329,23 +395,10 @@ def scrape_athlete(page, tfrrs_athlete_id, athlete_id, team_id, gender, athlete_
                 "meet_date": meet_date,
             })
 
-    # Sort by date (oldest first) so PRs build up chronologically
     all_results.sort(key=lambda r: r["meet_date"] or "0000-00-00")
-
     for r in all_results:
-        print(f"  {r['event']}: {r['display']} @ {r['meet_name']} ({r['meet_date']})")
-        upsert_pr_if_faster(
-            athlete_id=athlete_id,
-            team_id=team_id,
-            event=r["event"],
-            new_seconds=r["new_seconds"],
-            new_meters=r["new_meters"],
-            display=r["display"],
-            meet_name=r["meet_name"],
-            meet_date=r["meet_date"],
-            gender=gender,
-            holder_name=athlete_name,
-        )
+        print(f"  {r['event']} ({r['season']}): {r['display']} @ {r['meet_name']} ({r['meet_date']})")
+    save_results(athlete_id, team_id, gender, athlete_name, all_results)
 
     print(f"  Total appearances logged: {len(all_results)}")
 
