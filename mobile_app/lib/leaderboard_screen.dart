@@ -29,13 +29,11 @@ class LeaderboardScreen extends StatefulWidget {
   State<LeaderboardScreen> createState() => _LeaderboardScreenState();
 }
 
-class _LeaderboardScreenState extends State<LeaderboardScreen>
-    with TickerProviderStateMixin {
+class _LeaderboardScreenState extends State<LeaderboardScreen> {
   TeamSnapshot? _snap;
   List<Map<String, dynamic>> _entries = [];
   List<Map<String, dynamic>> _grouped = [];
   Map<String, List<double>> _sparklines = {};
-  double _maxDelta = 0;
   bool _loading = true;
   bool _initialLoad = true;
   String? _error;
@@ -51,45 +49,31 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
   bool _allTime = false;
   final _searchCtrl = TextEditingController();
 
-  late final AnimationController _heatBarCtrl;
-  late final Animation<double> _heatBarAnim;
-
   @override
   void initState() {
     super.initState();
-    _heatBarCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1000),
-    );
-    _heatBarAnim = CurvedAnimation(parent: _heatBarCtrl, curve: kSpring);
     _searchCtrl.addListener(() {
       if (_search != _searchCtrl.text) {
         setState(() => _search = _searchCtrl.text);
       }
     });
     final cached = TeamData.instance.cached;
-    if (cached != null) {
-      _apply(cached);
-      _heatBarCtrl.forward();
-    }
+    if (cached != null) _apply(cached);
     _load();
   }
 
   @override
   void dispose() {
-    _heatBarCtrl.dispose();
     _searchCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _load({bool force = false}) async {
-    final hadData = _snap != null;
     try {
       final snap = await TeamData.instance.load(force: force);
       if (!mounted) return;
       setState(() => _apply(snap));
       ActivityFeed.instance.refresh(snap);
-      if (!hadData || force) _heatBarCtrl.forward(from: 0);
       if (_initialLoad) {
         await Future.delayed(const Duration(milliseconds: 100));
         if (mounted) setState(() => _initialLoad = false);
@@ -148,10 +132,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
     _entries = data;
     _grouped = grouped;
     _sparklines = sparklines;
-    _maxDelta = data.fold(0.0, (m, e) {
-      final d = (e['improvement_delta_pct'] as num? ?? 0).toDouble();
-      return d > m ? d : m;
-    });
     _loading = false;
     _error = null;
     if (_window != null && !snap.windows.contains(_window)) _window = null;
@@ -252,7 +232,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
     if (tab == _tab) return;
     HapticFeedback.selectionClick();
     setState(() => _tab = tab);
-    if (tab == 'heat') _heatBarCtrl.forward(from: 0);
   }
 
   @override
@@ -476,7 +455,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                   _group = g;
                   _subEvent = null;
                 });
-                if (_tab == 'heat') _heatBarCtrl.forward(from: 0);
               },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 250),
@@ -747,8 +725,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
             entry: entry,
             index: actualIndex,
             tab: _tab,
-            maxDelta: _maxDelta,
-            heatAnim: _heatBarAnim,
             dark: dark,
             sparkData: sparkData,
             onTap: () => _openDetail(entry),
@@ -1383,8 +1359,6 @@ class _LeaderboardRow extends StatefulWidget {
   final Map<String, dynamic> entry;
   final int index;
   final String tab;
-  final double maxDelta;
-  final Animation<double> heatAnim;
   final bool dark;
   final List<double> sparkData;
   final VoidCallback onTap;
@@ -1393,8 +1367,6 @@ class _LeaderboardRow extends StatefulWidget {
     required this.entry,
     required this.index,
     required this.tab,
-    required this.maxDelta,
-    required this.heatAnim,
     required this.dark,
     required this.sparkData,
     required this.onTap,
@@ -1490,35 +1462,6 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
                       color: C.text3(dark),
                     ),
                   ),
-                  if (widget.tab == 'heat' &&
-                      widget.maxDelta > 0 &&
-                      delta > 0) ...[
-                    const SizedBox(height: 6),
-                    AnimatedBuilder(
-                      animation: widget.heatAnim,
-                      builder: (_, child) => ClipRRect(
-                        borderRadius: BorderRadius.circular(3),
-                        child: Container(
-                          height: 4,
-                          color: C.surface3(dark),
-                          child: FractionallySizedBox(
-                            alignment: Alignment.centerLeft,
-                            widthFactor:
-                                (delta.toDouble() / widget.maxDelta)
-                                        .clamp(0.0, 1.0) *
-                                    widget.heatAnim.value,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [C.accentOf(dark), C.accentAlt],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),

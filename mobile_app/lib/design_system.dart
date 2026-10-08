@@ -581,6 +581,49 @@ class PrimaryButton extends StatelessWidget {
   }
 }
 
+// ─── Confirm dialog ───────────────────────────────────────────────────────────
+
+/// "Are you sure?" with Cancel and one confirming action. True if confirmed.
+Future<bool> confirmAction(
+  BuildContext context, {
+  required String title,
+  String? message,
+  required String confirmLabel,
+  String cancelLabel = 'Cancel',
+  bool destructive = false,
+}) async {
+  final dark = Theme.of(context).brightness == Brightness.dark;
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      backgroundColor: C.surface(dark),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Text(title,
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: C.text1(dark))),
+      content: message == null
+          ? null
+          : Text(message, style: TextStyle(fontSize: 14, height: 1.4, color: C.text2(dark))),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: Text(cancelLabel, style: TextStyle(color: C.text2(dark))),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: Text(
+            confirmLabel,
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: destructive ? C.accentOf(dark) : C.text1(dark),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+  return confirmed ?? false;
+}
+
 // ─── Custom toggle ────────────────────────────────────────────────────────────
 class CustomToggle extends StatelessWidget {
   final bool value;

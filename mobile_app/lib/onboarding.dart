@@ -585,31 +585,15 @@ class _ClaimProfileScreenState extends State<ClaimProfileScreen> {
   }
 
   Future<void> _pick(RosterEntry entry) async {
-    final dark = Theme.of(context).brightness == Brightness.dark;
     final name = formatName(entry.name);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: C.surface(dark),
-        title: Text('Are you $name?', style: TextStyle(color: C.text1(dark), fontWeight: FontWeight.w700)),
-        content: Text(
-          'Their PRs, meets and rankings from TFRRS will move onto your account.',
-          style: TextStyle(color: C.text2(dark), height: 1.4),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text('Not me', style: TextStyle(color: C.text2(dark))),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text("Yes, that's me",
-                style: TextStyle(color: C.accentOf(dark), fontWeight: FontWeight.w700)),
-          ),
-        ],
-      ),
+    final confirmed = await confirmAction(
+      context,
+      title: 'Are you $name?',
+      message: 'Their PRs, meets and rankings from TFRRS will move onto your account.',
+      confirmLabel: "Yes, that's me",
+      cancelLabel: 'Not me',
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
 
     HapticFeedback.mediumImpact();
     setState(() => _claiming = entry.id);

@@ -433,13 +433,33 @@ def roster_changes(profiles, roster):
     return current, left
 
 
+def name_key(name):
+    """'Hackett, Tyler' and 'tyler  hackett' → 'tyler hackett'."""
+    name = re.sub(r'\s+', ' ', name or '').strip()
+    if ',' in name:
+        last, first = name.split(',', 1)
+        name = f"{first.strip()} {last.strip()}"
+    return name.lower()
+
+
+def name_changes(profiles, names):
+    """Profiles whose name really differs from the TFRRS roster, as
+    [(id, tfrrs_name)]: a name typed at sign-up, or a changed first name.
+    'Last, First' vs 'First Last' and capitalization don't count, so TFRRS
+    typos like 'DanieL' don't overwrite a cleaner name."""
+    return [(p['id'], names[p['tfrrs_athlete_id']]) for p in profiles
+            if p.get('tfrrs_athlete_id') in names
+            and name_key(p.get('full_name')) != name_key(names[p['tfrrs_athlete_id']])]
+
+
 def roster_read_looks_complete(on_roster_now, seen):
     return on_roster_now == 0 or seen >= on_roster_now * MIN_ROSTER_SHARE
 
 
-def update_roster_status(team_id, roster, dry_run=False):
+def update_roster_status(team_id, roster, names=None, dry_run=False):
     """Marks who's on the team's current TFRRS roster, with class years, and
-    who has left it (alumni). Showing up on the roster again undoes leaving."""
+    who has left it (alumni). Showing up on the roster again undoes leaving.
+    names ({tfrrs_id: name}) keeps profile names matching TFRRS."""
     profiles = supabase.table("profiles") \
         .select("id, full_name, tfrrs_athlete_id, on_roster") \
         .eq("team_id", team_id) \
@@ -452,13 +472,19 @@ def update_roster_status(team_id, roster, dry_run=False):
               f"on the roster; not marking anyone as gone")
         left = []
 
-    names = {p['id']: p['full_name'] for p in profiles}
+    renames = name_changes(profiles, names or {})
+    by_id = {p['id']: p['full_name'] for p in profiles}
     print(f"\nRoster: {sum(len(ids) for ids in current.values())} on the roster, "
-          f"{len(left)} newly gone")
+          f"{len(left)} newly gone, {len(renames)} renamed")
     for profile_id in left:
-        print(f"  left the roster: {names[profile_id]}")
+        print(f"  left the roster: {by_id[profile_id]}")
+    for profile_id, name in renames:
+        print(f"  renamed: {by_id[profile_id]} -> {name}")
     if dry_run:
         return
+
+    for profile_id, name in renames:
+        supabase.table("profiles").update({"full_name": name}).eq("id", profile_id).execute()
 
     for year, ids in current.items():
         supabase.table("profiles") \
@@ -770,6 +796,7 @@ def run_scraper(ranks_only=False, roster_only=False, dry_run=False):
 
         conference = None
         roster_ids = {}  # tfrrs_id → class year, across the team pages
+        roster_names = {}  # tfrrs_id → name as TFRRS shows it
         roster_complete = True
         for team_url in team_urls:
             gender = 'F' if '_f_' in team_url else 'M'
@@ -782,6 +809,7 @@ def run_scraper(ranks_only=False, roster_only=False, dry_run=False):
             roster, from_table = scrape_team_roster(page, team_url, team_id)
             roster_complete = roster_complete and from_table and bool(roster)
             roster_ids.update({a["tfrrs_id"]: a["year"] for a in roster})
+            roster_names.update({a["tfrrs_id"]: a["name"] for a in roster})
             conference = conference or read_conference(page)
             if roster_only:
                 continue
@@ -828,7 +856,7 @@ def run_scraper(ranks_only=False, roster_only=False, dry_run=False):
         if not ranks_only:
             if roster_complete:
                 try:
-                    update_roster_status(team_id, roster_ids, dry_run=dry_run)
+                    update_roster_status(team_id, roster_ids, roster_names, dry_run=dry_run)
                 except Exception as e:
                     print(f"\nWARNING: roster status skipped: {e}")
             else:

@@ -26,6 +26,7 @@ from scraper import (
     parse_roster_rows,
     roster_changes,
     roster_read_looks_complete,
+    name_changes,
 )
 
 
@@ -375,3 +376,23 @@ class TestRosterChanges:
         assert roster_read_looks_complete(on_roster_now=88, seen=60)
         assert not roster_read_looks_complete(on_roster_now=88, seen=12)
         assert roster_read_looks_complete(on_roster_now=0, seen=3)
+
+
+class TestNameChanges:
+    def test_names_follow_the_roster(self):
+        profiles = [
+            {"id": "a", "tfrrs_athlete_id": "1", "full_name": "jonathan mordi test"},
+            {"id": "b", "tfrrs_athlete_id": "2", "full_name": "Chen, Lily"},
+            {"id": "c", "tfrrs_athlete_id": "3", "full_name": "Gone, Person"},
+            {"id": "d", "tfrrs_athlete_id": "4", "full_name": "Doug Winant"},
+        ]
+        names = {"1": "Mordi, Jonathan", "2": "Chen, Lily", "4": "Winant, Douglas"}
+        assert name_changes(profiles, names) == [("a", "Mordi, Jonathan"), ("d", "Winant, Douglas")]
+
+    def test_order_and_capitalization_dont_count(self):
+        profiles = [
+            {"id": "a", "tfrrs_athlete_id": "1", "full_name": "Tyler Hackett"},
+            {"id": "b", "tfrrs_athlete_id": "2", "full_name": "Affoumani, Daniel"},
+        ]
+        names = {"1": "Hackett, Tyler", "2": "Affoumani, DanieL"}
+        assert name_changes(profiles, names) == []

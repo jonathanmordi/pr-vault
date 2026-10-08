@@ -262,7 +262,7 @@ class _LoginScreenState extends State<LoginScreen> {
         final res = await supabase.auth.signUp(
           email: email,
           password: _passCtrl.text.trim(),
-          data: {'full_name': _nameCtrl.text.trim(), 'role': 'athlete'},
+          data: {'full_name': _nameCtrl.text.trim()},
         );
         // With email confirmation on there's no session until the emailed
         // code is entered. Without it, AuthGate takes over straight away.
