@@ -50,12 +50,14 @@ class FakeApi extends OnboardingApi {
     return true;
   }
 
+  List<RosterEntry> roster = const [
+    RosterEntry(id: 'p1', name: 'Chen, Lily', gender: 'F'),
+    RosterEntry(id: 'p2', name: 'Mordi, Jonathan', gender: 'M'),
+    RosterEntry(id: 'p3', name: 'Okafor, Daniel', gender: 'M'),
+  ];
+
   @override
-  Future<List<RosterEntry>> unclaimedRoster() async => const [
-        RosterEntry(id: 'p1', name: 'Chen, Lily', gender: 'F'),
-        RosterEntry(id: 'p2', name: 'Mordi, Jonathan', gender: 'M'),
-        RosterEntry(id: 'p3', name: 'Okafor, Daniel', gender: 'M'),
-      ];
+  Future<List<RosterEntry>> unclaimedRoster() async => roster;
 
   @override
   Future<void> claim(String profileId) async => claimed.add(profileId);

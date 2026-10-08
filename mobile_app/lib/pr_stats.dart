@@ -27,6 +27,20 @@ DateTime? parseMeetDate(Object? raw) {
 String trackSeasonOf(DateTime d) =>
     d.month >= 3 && d.month <= 8 ? 'outdoor' : 'indoor';
 
+/// 'SR-4' → 'Senior'. TFRRS shows class years as FR-1, SO-2, JR-3, SR-4.
+String? classYearLabel(String? raw) {
+  final code = raw?.trim().split('-').first.toUpperCase() ?? '';
+  return switch (code) {
+    '' => null,
+    'FR' => 'Freshman',
+    'SO' => 'Sophomore',
+    'JR' => 'Junior',
+    'SR' => 'Senior',
+    'GR' => 'Grad student',
+    _ => raw!.trim(),
+  };
+}
+
 /// Academic seasons run Aug 1 – Jul 31, covering one indoor and one
 /// outdoor season. Returns the year the season starts in.
 int academicYearOf(DateTime d) => d.month >= 8 ? d.year : d.year - 1;

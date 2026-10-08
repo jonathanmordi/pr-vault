@@ -445,6 +445,21 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
 
   String _initials(String name) => initialsFor(name);
 
+  /// 'Senior' for someone on the current roster, "Alum '26" for someone who
+  /// has left it (the season of their last meet), or null if unknown.
+  String? get _standing {
+    final team = _team;
+    if (team == null) return null;
+    if (team.isCurrent(widget.athleteId)) {
+      return classYearLabel(team.classYearOf(widget.athleteId));
+    }
+    final dates = _appearances.map((a) => parseMeetDate(a['meet_date'])).whereType<DateTime>();
+    if (dates.isEmpty) return 'Alum';
+    final last = dates.reduce((a, b) => a.isAfter(b) ? a : b);
+    final year = (academicYearOf(last) + 1) % 100;
+    return "Alum '${year.toString().padLeft(2, '0')}";
+  }
+
   double get _bestImprovement => _prs.fold(0.0, (m, pr) {
         final d = (pr['improvement_delta_pct'] as num? ?? 0.0).toDouble();
         return d > m ? d : m;
@@ -656,6 +671,8 @@ class _AthleteProfileScreenState extends State<AthleteProfileScreen> {
                                           if (!_loading)
                                             _pill('${_prs.length} PRs', C.accentSoft(dark), C.accentOf(dark)),
                                           _pill(isFemale ? 'Women' : 'Men', C.surface2(dark), C.text2(dark)),
+                                          if (_standing case final standing?)
+                                            _pill(standing, C.surface2(dark), C.text2(dark)),
                                         ],
                                       ),
                                     ],

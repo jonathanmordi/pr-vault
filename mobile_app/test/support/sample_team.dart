@@ -67,7 +67,8 @@ String _display(String event, double v) {
   return v.toStringAsFixed(2);
 }
 
-TeamSnapshot sampleTeam() {
+/// [alumni] lists athlete ids that have left the roster.
+TeamSnapshot sampleTeam({Set<String> alumni = const {}}) {
   final appearances = <Map<String, dynamic>>[];
   final prs = <Map<String, dynamic>>[];
   for (final s in _series) {
@@ -98,7 +99,12 @@ TeamSnapshot sampleTeam() {
       'improvement_delta_pct': (best - prev).abs() / prev * 100,
       'set_on': s.results.last.$1,
       'set_at_meet': _meets.first,
-      'profiles': {'full_name': s.name, 'gender': s.gender},
+      'profiles': {
+        'full_name': s.name,
+        'gender': s.gender,
+        'on_roster': !alumni.contains(s.athleteId),
+        'class_year': 'JR-3',
+      },
     });
   }
   appearances.sort((a, b) =>

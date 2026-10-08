@@ -36,6 +36,24 @@ class TeamSnapshot {
       p['athlete_id'] as String: (p['profiles']?['gender'] as String?) ?? 'M',
   };
 
+  late final Map<String, bool> _current = {
+    for (final p in prs)
+      p['athlete_id'] as String: (p['profiles']?['on_roster'] as bool?) ?? true,
+  };
+
+  late final Map<String, String?> _classYears = {
+    for (final p in prs)
+      p['athlete_id'] as String: p['profiles']?['class_year'] as String?,
+  };
+
+  /// False for alumni: athletes no longer on the current TFRRS roster.
+  bool isCurrent(String athleteId) => _current[athleteId] ?? true;
+
+  bool get hasAlumni => _current.containsValue(false);
+
+  /// As TFRRS shows it, e.g. 'SR-4'; see classYearLabel.
+  String? classYearOf(String athleteId) => _classYears[athleteId];
+
   String nameOf(String athleteId) => _names[athleteId] ?? 'Unknown';
   String genderOf(String athleteId) => _genders[athleteId] ?? 'M';
 
@@ -53,8 +71,11 @@ class TeamSnapshot {
       .where((p) => p.athleteId == athleteId && window.contains(p.date))
       .fold(0, (sum, p) => sum + p.points);
 
-  Map<String, Rival> rivalsOf(String athleteId) =>
-      rivalsFor(athleteId, _genders[athleteId], prs);
+  /// Rivals come from the current roster only; alumni aren't chasing anyone.
+  Map<String, Rival> rivalsOf(String athleteId) => rivalsFor(
+      athleteId,
+      _genders[athleteId],
+      prs.where((p) => p['athlete_id'] == athleteId || isCurrent(p['athlete_id'] as String)));
 }
 
 /// Caches the latest [TeamSnapshot] for the signed-in user.
@@ -86,16 +107,23 @@ class TeamData {
     return _inFlight ??= _fetch().whenComplete(() => _inFlight = null);
   }
 
-  Future<TeamSnapshot> _fetch() async {
-    final userId = currentUserId();
-    final results = await Future.wait([
+  Future<List<Map<String, dynamic>>> _fetchPrs(String profileColumns) =>
       _fetchAll((from, to) => _supabase
           .from('track_prs')
           .select(
-              'event, best_display, best_mark_meters, best_time_seconds, improvement_delta_pct, set_on, set_at_meet, athlete_id, profiles(full_name, gender)')
+              'event, best_display, best_mark_meters, best_time_seconds, improvement_delta_pct, set_on, set_at_meet, athlete_id, profiles($profileColumns)')
           .order('athlete_id')
           .order('event')
-          .range(from, to)),
+          .range(from, to));
+
+  Future<TeamSnapshot> _fetch() async {
+    final userId = currentUserId();
+    final results = await Future.wait([
+      // Roster columns come with the roster_status migration; until it's
+      // applied everyone counts as current.
+      _fetchPrs('full_name, gender, on_roster, class_year').catchError(
+          (_) => _fetchPrs('full_name, gender'),
+          test: (e) => e is PostgrestException),
       // Ordered by the table's unique key so pages never overlap or skip.
       _fetchAll((from, to) => _supabase
           .from('meet_appearances')

@@ -47,6 +47,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
   String _gender = 'All';
   TrendWindow? _window; // null = the snapshot's current season
   bool _trendByPoints = false;
+  /// PR Rankings: include alumni (everyone who's competed for the team).
+  bool _allTime = false;
   final _searchCtrl = TextEditingController();
 
   late final AnimationController _heatBarCtrl;
@@ -175,6 +177,12 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
       }).toList();
     }
 
+    // Alumni only show on PR Rankings' all-time view; Heat Map is about now.
+    final snap = _snap;
+    if (snap != null && !(_tab == 'rankings' && _allTime)) {
+      list = list.where((e) => snap.isCurrent(e['athlete_id'] as String)).toList();
+    }
+
     if (_search.isNotEmpty) {
       final q = _search.toLowerCase();
       list = list.where((e) {
@@ -252,6 +260,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
     final dark = Theme.of(context).brightness == Brightness.dark;
     final showSubChips = _group != 'All' && _eventGroups[_group] != null;
     final showTrendControls = _tab == 'trending' && _snap != null;
+    final showRosterControls = _tab == 'rankings' && (_snap?.hasAlumni ?? false);
 
     return Scaffold(
       backgroundColor: C.bg(dark),
@@ -276,6 +285,14 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
               alignment: Alignment.topCenter,
               child: showTrendControls
                   ? _buildTrendControls(dark)
+                  : const SizedBox(width: double.infinity),
+            ),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 220),
+              curve: kSpring,
+              alignment: Alignment.topCenter,
+              child: showRosterControls
+                  ? _buildRosterControls(dark)
                   : const SizedBox(width: double.infinity),
             ),
             Container(height: 0.5, color: C.border(dark)),
@@ -558,6 +575,36 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
     );
   }
 
+  /// Current roster vs. all-time (with alumni), on PR Rankings.
+  Widget _buildRosterControls(bool dark) {
+    return SizedBox(
+      height: 44,
+      child: Row(
+        children: [
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(left: 20),
+              child: Text(
+                _allTime ? 'Everyone who has competed for the team' : 'Current roster',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: C.text3(dark)),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 20),
+            child: SegmentToggle(
+              options: const ['Current', 'All-time'],
+              value: _allTime ? 'All-time' : 'Current',
+              dark: dark,
+              onChanged: (v) => setState(() => _allTime = v == 'All-time'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildTrendControls(bool dark) {
     final snap = _snap!;
     final current = _window ?? snap.currentSeason;
@@ -632,7 +679,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
         ),
         child: KeyedSubtree(
           key: ValueKey(
-              '$_tab|$_group|$_subEvent|$_gender|${_window?.id}|$_trendByPoints'),
+              '$_tab|$_group|$_subEvent|$_gender|${_window?.id}|$_trendByPoints|$_allTime'),
           child: content,
         ),
       ),
@@ -1369,6 +1416,7 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
     final delta = (e['improvement_delta_pct'] ?? 0.0) as num;
     final gender = e['profiles']?['gender'] ?? 'M';
     final isField = isFieldEvent(event);
+    final alum = e['profiles']?['on_roster'] == false;
 
     return GestureDetector(
       onTapDown: (_) => setState(() => _pressed = true),
@@ -1397,16 +1445,41 @@ class _LeaderboardRowState extends State<_LeaderboardRow> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    name,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: -0.15,
-                      color: C.text1(dark),
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          name,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: -0.15,
+                            color: C.text1(dark),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (alum) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: C.surface2(dark),
+                            borderRadius: BorderRadius.circular(100),
+                          ),
+                          child: Text(
+                            'ALUM',
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.4,
+                              color: C.text3(dark),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 2),
                   Text(

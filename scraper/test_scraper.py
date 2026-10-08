@@ -23,6 +23,9 @@ from scraper import (
     pick_conference,
     list_label,
     build_rank_entries,
+    parse_roster_rows,
+    roster_changes,
+    roster_read_looks_complete,
 )
 
 
@@ -330,3 +333,45 @@ class TestBuildRankEntries:
         (entry,) = build_rank_entries(blocks, self.ROSTER, "team", self.INFO)
         assert entry["rank"] == 3 and entry["mark_display"] == "6.80m"
 
+
+class TestParseRosterRows:
+    @staticmethod
+    def row(name, tfrrs_id, year="SR-4"):
+        return {"name": f" {name} ", "href": f"https://www.tfrrs.org/athletes/{tfrrs_id}/Stevens/X",
+                "year": f" {year} "}
+
+    def test_reads_name_id_and_class_year(self):
+        assert parse_roster_rows([self.row("Adamo,   James", "111", "SO-2")]) == [
+            {"name": "Adamo, James", "tfrrs_id": "111", "year": "SO-2"},
+        ]
+
+    def test_skips_rows_without_an_athlete_and_duplicates(self):
+        rows = [self.row("A, B", "111"), {"name": "", "href": None, "year": ""}, self.row("A, B", "111")]
+        assert [a["tfrrs_id"] for a in parse_roster_rows(rows)] == ["111"]
+
+    def test_missing_year_is_none(self):
+        assert parse_roster_rows([{"name": "A, B", "href": "/athletes/5/X", "year": ""}])[0]["year"] is None
+
+
+class TestRosterChanges:
+    PROFILES = [
+        {"id": "a", "tfrrs_athlete_id": "1", "on_roster": True},
+        {"id": "b", "tfrrs_athlete_id": "2", "on_roster": True},
+        {"id": "c", "tfrrs_athlete_id": "3", "on_roster": False},
+        {"id": "d", "tfrrs_athlete_id": "4", "on_roster": False},
+    ]
+
+    def test_on_roster_grouped_by_year_and_dropped_off_listed(self):
+        current, left = roster_changes(self.PROFILES, {"1": "SR-4", "3": "JR-3"})
+        assert current == {"SR-4": ["a"], "JR-3": ["c"]}  # c came back
+        assert left == ["b"]  # d had already left
+
+    def test_nobody_left_when_everyone_is_listed(self):
+        _, left = roster_changes(self.PROFILES[:2], {"1": "FR-1", "2": "FR-1"})
+        assert left == []
+
+    def test_a_partial_read_is_not_trusted(self):
+        assert roster_read_looks_complete(on_roster_now=88, seen=87)
+        assert roster_read_looks_complete(on_roster_now=88, seen=60)
+        assert not roster_read_looks_complete(on_roster_now=88, seen=12)
+        assert roster_read_looks_complete(on_roster_now=0, seen=3)
