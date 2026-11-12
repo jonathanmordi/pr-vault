@@ -44,7 +44,7 @@ Most track stats platforms are public databases: they show raw times but offer n
 
 | Layer | Technology |
 |-------|-----------|
-| Mobile | Flutter (iOS + Android) |
+| Mobile | React Native with Expo, TypeScript (iOS + Android) |
 | Backend | Supabase (Postgres, Auth, PostgREST) |
 | Auth | Email + password, school email verified with a 6-digit code |
 | Scraper | Python + Playwright |
@@ -62,7 +62,7 @@ Python scraper (Playwright), nightly via GitHub Actions
     ↓ secret key
 Supabase Postgres (row-level security per team)
     ↓ REST, with the user's session
-Flutter app, which keeps a copy of the team's data on the phone
+React Native app, which keeps a copy of the team's data on the phone
 ```
 
 **Schema:**
@@ -82,26 +82,30 @@ Flutter app, which keeps a copy of the team's data on the phone
 
 ```
 prvault/
-├── mobile_app/                  # Flutter app
-│   ├── lib/
-│   │   ├── main.dart            # app, auth gate, tab bar
-│   │   ├── login_screen.dart
-│   │   ├── onboarding.dart      # school email, team, claim your TFRRS profile
-│   │   ├── intro.dart           # how-it-works intro
-│   │   ├── leaderboard_screen.dart
-│   │   ├── athlete_profile_screen.dart
-│   │   ├── profile_screen.dart
-│   │   ├── activity_screen.dart
-│   │   ├── maxes_screen.dart
-│   │   ├── settings_screen.dart
-│   │   ├── team_data.dart       # loads the team, keeps it in memory
-│   │   ├── team_cache*.dart     # the copy saved on the phone
-│   │   ├── pr_stats.dart        # PRs, seasons, trends, rivals, ranks
-│   │   ├── insights.dart        # rule-based athlete insights
-│   │   ├── prefs.dart           # settings
-│   │   └── design_system.dart   # colors, components, animations
-│   ├── assets/brand/            # app icon used in the app
-│   └── test/
+├── mobile/                      # React Native app (Expo, TypeScript)
+│   ├── src/
+│   │   ├── app/                 # routes: auth gate, tabs, pushed screens
+│   │   ├── screens/
+│   │   │   ├── MainShell.tsx    # tabs and the floating tab bar
+│   │   │   ├── Login.tsx
+│   │   │   ├── Onboarding.tsx   # school email, team, claim your TFRRS profile
+│   │   │   ├── Intro.tsx        # how-it-works intro
+│   │   │   ├── Leaderboard.tsx
+│   │   │   ├── AthleteProfile.tsx
+│   │   │   ├── athleteSheet.tsx # the floating profile card
+│   │   │   ├── MyProfile.tsx
+│   │   │   ├── Activity.tsx
+│   │   │   ├── Maxes.tsx
+│   │   │   └── Settings.tsx
+│   │   ├── components/          # design system: buttons, toggles, filter pill, chart
+│   │   ├── theme/colors.ts
+│   │   └── lib/
+│   │       ├── teamData.ts      # loads the team, keeps it in memory
+│   │       ├── teamCache.ts     # the copy saved on the phone
+│   │       ├── prStats.ts       # PRs, seasons, trends, rivals, ranks
+│   │       ├── insights.ts      # rule-based athlete insights
+│   │       └── prefs.ts         # settings
+│   └── assets/brand/            # app icon
 ├── scraper/                     # Python TFRRS scraper
 │   ├── scraper.py
 │   └── test_scraper.py
@@ -116,13 +120,15 @@ prvault/
 
 ## Running locally
 
-**Flutter app:**
+**App:**
 ```bash
-cd mobile_app
-flutter pub get
-# create lib/app_config.dart with your Supabase credentials (see below)
-flutter run
-flutter test
+cd mobile
+npm install
+# create src/lib/appConfig.ts with your Supabase credentials (see below)
+npx expo run:ios        # builds and opens it in the iOS simulator
+npx expo run:ios --device  # on a plugged-in iPhone
+npm test                # logic and screen tests
+npm run typecheck
 ```
 
 **Scraper:**
@@ -147,12 +153,12 @@ python3 -m pytest                 # parsing and PR logic tests
 
 ## Environment variables
 
-**Flutter**: create `mobile_app/lib/app_config.dart` (gitignored):
-```dart
-class AppConfig {
-  static const supabaseUrl = 'YOUR_SUPABASE_URL';
-  static const supabaseAnonKey = 'YOUR_PUBLISHABLE_KEY';
-}
+**App**: create `mobile/src/lib/appConfig.ts` (gitignored):
+```ts
+export const AppConfig = {
+  supabaseUrl: 'YOUR_SUPABASE_URL',
+  supabaseAnonKey: 'YOUR_PUBLISHABLE_KEY',
+};
 ```
 
 **Scraper**: create `scraper/.env` (gitignored):
