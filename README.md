@@ -84,9 +84,9 @@ React Native app, which keeps a copy of the team's data on the phone
 prvault/
 ├── mobile/                      # React Native app (Expo, TypeScript)
 │   ├── src/
-│   │   ├── app/                 # routes: auth gate, tabs, pushed screens
+│   │   ├── app/                 # routes: auth gate, pushed screens
+│   │   │   └── (tabs)/          # the four tabs on the system tab bar
 │   │   ├── screens/
-│   │   │   ├── MainShell.tsx    # tabs and the floating tab bar
 │   │   │   ├── Login.tsx
 │   │   │   ├── Onboarding.tsx   # school email, team, claim your TFRRS profile
 │   │   │   ├── Intro.tsx        # how-it-works intro
