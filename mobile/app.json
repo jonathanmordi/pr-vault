@@ -9,7 +9,8 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.jonathanmordi.prvault"
+      "bundleIdentifier": "com.jonathanmordi.prvault",
+      "appleTeamId": "T7HX3XL377"
     },
     "android": {
       "package": "com.jonathanmordi.prvault",
