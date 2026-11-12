@@ -373,12 +373,9 @@ export function AppChip({
   onPress: () => void;
   small?: boolean;
 }) {
-  const fill = useAnimatedStyle(
-    () => ({
-      backgroundColor: withTiming(selected ? C.text1(dark) : C.surface2(dark), { duration: 220, easing: kSpring }),
-    }),
-    [selected, dark],
-  );
+  // Colors are picked here: worklets can't call plain functions like C.text1.
+  const color = selected ? C.text1(dark) : C.surface2(dark);
+  const fill = useAnimatedStyle(() => ({ backgroundColor: withTiming(color, { duration: 220, easing: kSpring }) }), [color]);
   return (
     <PressScale
       pressedScale={0.96}
@@ -543,10 +540,8 @@ export function StepHeading({ title, body, dark }: { title: string; body?: strin
 // ─── Toggle ───────────────────────────────────────────────────────────────────
 
 export function CustomToggle({ value, onChange, dark }: { value: boolean; onChange: (v: boolean) => void; dark: boolean }) {
-  const track = useAnimatedStyle(
-    () => ({ backgroundColor: withTiming(value ? C.accentOf(dark) : C.surface3(dark), { duration: 200 }) }),
-    [value, dark],
-  );
+  const color = value ? C.accentOf(dark) : C.surface3(dark);
+  const track = useAnimatedStyle(() => ({ backgroundColor: withTiming(color, { duration: 200 }) }), [color]);
   const thumb = useAnimatedStyle(
     () => ({ transform: [{ translateX: withTiming(value ? 18 : 0, { duration: 200, easing: kSpring }) }] }),
     [value],
