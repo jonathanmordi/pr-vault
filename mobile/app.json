@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "PR Vault",
+    "slug": "prvault",
+    "scheme": "prvault",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/brand/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.jonathanmordi.prvault"
+    },
+    "android": {
+      "package": "com.jonathanmordi.prvault",
+      "adaptiveIcon": {
+        "backgroundColor": "#C8140F",
+        "foregroundImage": "./assets/brand/icon.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-status-bar",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/brand/icon.png",
+          "imageWidth": 120,
+          "resizeMode": "contain",
+          "backgroundColor": "#F2F2F5",
+          "dark": {
+            "image": "./assets/brand/icon.png",
+            "backgroundColor": "#000000"
+          }
+        }
+      ],
+      "expo-image",
+      "expo-font",
+      "expo-asset"
+    ],
+    "experiments": {
+      "typedRoutes": false
+    }
+  }
+}
