@@ -40,7 +40,7 @@ export default function RootLayout() {
           <OverlayProvider>
             <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: C.bg(dark) }, statusBarStyle: dark ? 'light' : 'dark' }}>
               <Stack.Protected guard={session != null} redirectTo="/sign-in">
-                <Stack.Screen name="index" />
+                <Stack.Screen name="(tabs)" />
                 <Stack.Screen name="activity" />
                 <Stack.Screen name="athlete/[id]" />
                 <Stack.Screen name="notifications" />
