@@ -1,4 +1,4 @@
-import { AuthError, PostgrestError } from '@supabase/supabase-js';
+import { AuthError, PostgrestError, isAuthRetryableFetchError } from '@supabase/supabase-js';
 import { router } from 'expo-router';
 import { ReactNode, useEffect, useRef, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
@@ -251,7 +251,7 @@ export function VerifyEmail({ email, api = onboardingApi }: { email: string; api
       setCode('');
       setVerifying(false);
       setError(
-        e instanceof AuthError
+        e instanceof AuthError && !isAuthRetryableFetchError(e)
           ? "That code didn't work. Check the newest email, or send a new one."
           : "Couldn't reach PR Vault. Check your connection and try again.",
       );
@@ -270,7 +270,7 @@ export function VerifyEmail({ email, api = onboardingApi }: { email: string; api
       setCooldown(resendWait);
       toast('New code sent');
     } catch (e) {
-      if (e instanceof AuthError) setError(e.message);
+      setError(e instanceof AuthError && !isAuthRetryableFetchError(e) ? e.message : "Couldn't reach PR Vault. Check your connection.");
     }
   };
 

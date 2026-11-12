@@ -1,7 +1,7 @@
 // Sign-in and sign-up. A red hero shows what the app does (a track, a few
 // cards like the ones inside), with the form on a card below it.
 
-import { AuthError } from '@supabase/supabase-js';
+import { AuthError, isAuthRetryableFetchError } from '@supabase/supabase-js';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Text, View } from 'react-native';
@@ -58,7 +58,8 @@ export function Login() {
         }
       }
     } catch (e) {
-      toast(e instanceof AuthError ? e.message : "Couldn't reach PR Vault. Check your connection.");
+      // A network failure comes back as an auth error too; say it plainly.
+      toast(e instanceof AuthError && !isAuthRetryableFetchError(e) ? e.message : "Couldn't reach PR Vault. Check your connection.");
     }
     setLoading(false);
   };
