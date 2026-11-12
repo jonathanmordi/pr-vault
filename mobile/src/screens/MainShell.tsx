@@ -140,7 +140,7 @@ function FloatingNav({ current, onSelect, dark }: { current: number; onSelect: (
         bar,
       ]}
     >
-      {/* Frosted glass: whatever scrolls underneath shows through, blurred. */}
+      {/* Nearly solid, with a touch of blur at the edges of what scrolls under. */}
       <View style={{ borderRadius: 32, overflow: 'hidden' }}>
         <BlurView intensity={60} tint={dark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
         <GestureDetector gesture={gesture}>
@@ -150,9 +150,9 @@ function FloatingNav({ current, onSelect, dark }: { current: number; onSelect: (
             style={{
               height: 64,
               borderRadius: 32,
-              backgroundColor: dark ? 'rgba(28, 28, 30, 0.72)' : 'rgba(255, 255, 255, 0.75)',
+              backgroundColor: dark ? 'rgba(28, 28, 30, 0.95)' : 'rgba(255, 255, 255, 0.95)',
               borderWidth: 0.5,
-              borderColor: dark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(255, 255, 255, 0.65)',
+              borderColor: dark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(0, 0, 0, 0.06)',
               flexDirection: 'row',
               paddingHorizontal: inset,
             }}
