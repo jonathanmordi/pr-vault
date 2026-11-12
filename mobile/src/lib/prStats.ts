@@ -40,7 +40,7 @@ export function isoDay(d: Date) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-/** Orders strings by code unit, like Dart's compareTo (localeCompare ignores case). */
+/** Orders strings by code unit, so case matters (localeCompare ignores it). */
 export const compareStrings = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 /** Whole days from [a] to [b], ignoring daylight saving shifts. */

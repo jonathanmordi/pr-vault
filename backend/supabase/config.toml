@@ -256,7 +256,7 @@ otp_expiry = 3600
 # content_path = "./supabase/templates/password_changed_notification.html"
 
 # Sign-up sends a code to type into the app rather than a link (see
-# VerifyEmailScreen in mobile_app/lib/onboarding.dart).
+# VerifyEmail in mobile/src/screens/Onboarding.tsx).
 [auth.email.template.confirmation]
 subject = "Your PR Vault code"
 content_path = "./supabase/templates/confirmation.html"

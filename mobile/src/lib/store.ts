@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 
-/** A value components can follow, like Flutter's ValueNotifier. */
+/** A value components can subscribe to, re-rendering when it changes. */
 export class Observable<T> {
   private listeners = new Set<() => void>();
 
